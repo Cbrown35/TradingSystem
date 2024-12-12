@@ -1,0 +1,88 @@
+groups:
+  - name: trading_system_metrics
+    interval: 1m
+    rules:
+      # System health scores
+      - record: trading_system:health_score:avg
+        expr: avg(up{job="trading_system"})
+
+      - record: trading_system:component_health:ratio
+        expr: sum(up{job=~"trading_system|market_data|strategy_execution|risk_management"}) / count(up{job=~"trading_system|market_data|strategy_execution|risk_management"})
+
+      # Trading performance metrics
+      - record: trading:success_rate:ratio_5m
+        expr: rate(trading_successful_trades_total[5m]) / rate(trading_trades_total[5m])
+
+      - record: trading:profit_loss:sum_1h
+        expr: sum(rate(trading_profit_loss_total[1h]))
+
+      # Risk metrics
+      - record: risk:exposure:current
+        expr: sum(trading_position_size_current)
+
+      - record: risk:margin_usage:ratio
+        expr: sum(trading_margin_used) / sum(trading_margin_available)
+
+      # Market data metrics
+      - record: market_data:latency:avg_5m
+        expr: rate(market_data_latency_seconds_sum[5m]) / rate(market_data_latency_seconds_count[5m])
+
+      - record: market_data:updates:rate_5m
+        expr: rate(market_data_updates_total[5m])
+
+      # Strategy execution metrics
+      - record: strategy:execution_time:avg_5m
+        expr: rate(strategy_execution_duration_seconds_sum[5m]) / rate(strategy_execution_duration_seconds_count[5m])
+
+      - record: strategy:signals:rate_5m
+        expr: rate(strategy_signals_generated_total[5m])
+
+      # Infrastructure metrics
+      - record: infra:database_connections:current
+        expr: sum(pg_stat_activity_count)
+
+      - record: infra:redis_memory:usage_ratio
+        expr: redis_memory_used_bytes / redis_memory_max_bytes
+
+      # Error rates
+      - record: errors:rate_5m
+        expr: sum(rate(trading_system_errors_total[5m]))
+
+      - record: errors:by_component:rate_5m
+        expr: sum by (component) (rate(trading_system_errors_total[5m]))
+
+  - name: slo_metrics
+    interval: 5m
+    rules:
+      # Availability SLOs
+      - record: slo:availability:ratio_1h
+        expr: avg_over_time(trading_system:health_score:avg[1h])
+
+      - record: slo:latency:ratio_1h
+        expr: sum(rate(http_request_duration_seconds_bucket{le="0.5"}[1h])) / sum(rate(http_request_duration_seconds_count[1h]))
+
+      # Trading SLOs
+      - record: slo:order_execution:success_ratio_1h
+        expr: sum(rate(trading_orders_successful_total[1h])) / sum(rate(trading_orders_total[1h]))
+
+      - record: slo:market_data:freshness_ratio_1h
+        expr: avg_over_time(market_data:updates:rate_5m[1h])
+
+  - name: resource_usage
+    interval: 5m
+    rules:
+      # CPU usage
+      - record: resource:cpu:usage_ratio
+        expr: avg by (instance) (rate(process_cpu_seconds_total[5m]))
+
+      # Memory usage
+      - record: resource:memory:usage_bytes
+        expr: sum by (instance) (process_resident_memory_bytes)
+
+      # Disk usage
+      - record: resource:disk:usage_ratio
+        expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes
+
+      # Network traffic
+      - record: resource:network:traffic_bytes
+        expr: sum by (instance) (rate(node_network_transmit_bytes_total[5m]) + rate(node_network_receive_bytes_total[5m]))

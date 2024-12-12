@@ -1,0 +1,120 @@
+{
+  "HealthChecksUI": {
+    "EvaluationTimeInSeconds": 30,
+    "MinimumSecondsBetweenFailureNotifications": 300,
+    "MaximumHistoryEntriesPerEndpoint": 50,
+    "ApiMaxActiveRequests": 3,
+    "DisableMigrations": false,
+    "UseRelativePaths": true,
+    "WebhookEndpoints": [
+      {
+        "Name": "Slack",
+        "Uri": "https://hooks.slack.com/services/YOUR_WEBHOOK_URL",
+        "Payload": "{\"text\": \"[[LIVENESS]] is [[FAILURE]] with message: [[DESCRIPTIONS]]\"}",
+        "RestoredPayload": "{\"text\": \"[[LIVENESS]] is back to life\"}",
+        "CustomHeaders": {
+          "Content-Type": "application/json"
+        }
+      }
+    ],
+    "BrandingResourcePath": "/branding.json",
+    "BrandingTitle": "Trading System Health Checks",
+    "BrandingSubtitle": "System Health Status",
+    "BrandingIcon": "/favicon.svg",
+    "BrandingFavIcon": "/favicon.ico",
+    "Branding": {
+      "PageTitle": "Trading System Health Status",
+      "MainIcon": "/favicon.svg",
+      "FavIcon": "/favicon.ico",
+      "CustomStylesheetUrl": "/css/healthchecks.css",
+      "StatusColors": {
+        "Healthy": "#28a745",
+        "Degraded": "#ffc107",
+        "Unhealthy": "#dc3545"
+      }
+    },
+    "Endpoints": [
+      {
+        "Name": "Trading System",
+        "Uri": "/health",
+        "Weight": 1,
+        "Tags": ["trading", "core"]
+      },
+      {
+        "Name": "Market Data",
+        "Uri": "http://localhost:5001/health",
+        "Weight": 2,
+        "Tags": ["market_data"]
+      },
+      {
+        "Name": "Strategy Execution",
+        "Uri": "http://localhost:5002/health",
+        "Weight": 2,
+        "Tags": ["trading", "strategy"]
+      },
+      {
+        "Name": "Risk Management",
+        "Uri": "http://localhost:5003/health",
+        "Weight": 3,
+        "Tags": ["risk"]
+      },
+      {
+        "Name": "Database",
+        "Uri": "http://localhost:9187/health",
+        "Weight": 2,
+        "Tags": ["infrastructure"]
+      },
+      {
+        "Name": "Redis Cache",
+        "Uri": "http://localhost:9121/health",
+        "Weight": 1,
+        "Tags": ["infrastructure", "cache"]
+      }
+    ],
+    "HeaderText": "Trading System Health Status",
+    "FooterText": "© 2024 Trading System",
+    "MenuLinks": [
+      {
+        "Name": "Documentation",
+        "Uri": "/docs"
+      },
+      {
+        "Name": "API",
+        "Uri": "/swagger"
+      },
+      {
+        "Name": "Metrics",
+        "Uri": "/metrics"
+      }
+    ],
+    "EvaluationTimeOnSeconds": 30,
+    "HealthCheckDatabaseConnectionString": "Data Source=healthchecks.db",
+    "Storage": {
+      "Type": "InMemory",
+      "RetentionPeriod": "90.00:00:00"
+    },
+    "Notifications": {
+      "Enabled": true,
+      "Providers": [
+        {
+          "Type": "slack",
+          "Settings": {
+            "WebhookUrl": "https://hooks.slack.com/services/YOUR_WEBHOOK_URL",
+            "Channel": "#trading-alerts",
+            "Username": "Health Check Monitor"
+          }
+        }
+      ],
+      "Rules": [
+        {
+          "Name": "Critical Alerts",
+          "Filter": {
+            "Status": ["Unhealthy"],
+            "Tags": ["trading", "risk"]
+          },
+          "Providers": ["slack"]
+        }
+      ]
+    }
+  }
+}

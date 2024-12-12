@@ -1,0 +1,175 @@
+global:
+  resolve_timeout: 5m
+  smtp_from: 'alertmanager@tradingsystem.com'
+  smtp_smarthost: 'smtp.example.com:587'
+  smtp_auth_username: 'alertmanager'
+  smtp_auth_password: 'password'
+  slack_api_url: 'https://hooks.slack.com/services/YOUR_SLACK_WEBHOOK'
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+route:
+  group_by: ['alertname', 'category']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'team-trading'
+
+  routes:
+    # Critical alerts go to PagerDuty
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: true
+
+    # Trading-related alerts
+    - match:
+        category: trading
+      receiver: 'team-trading'
+      group_by: ['alertname', 'category', 'severity']
+      routes:
+        - match:
+            severity: critical
+          receiver: 'pagerduty-trading'
+          group_wait: 10s
+          repeat_interval: 1h
+
+    # Risk management alerts
+    - match:
+        category: risk
+      receiver: 'team-risk'
+      group_by: ['alertname', 'category', 'severity']
+      routes:
+        - match:
+            severity: critical
+          receiver: 'pagerduty-risk'
+          group_wait: 10s
+          repeat_interval: 1h
+
+    # Infrastructure alerts
+    - match:
+        category: infrastructure
+      receiver: 'team-infrastructure'
+      group_by: ['alertname', 'category', 'severity']
+      routes:
+        - match:
+            severity: critical
+          receiver: 'pagerduty-infrastructure'
+          group_wait: 10s
+          repeat_interval: 1h
+
+    # Market data alerts
+    - match:
+        category: market_data
+      receiver: 'team-market-data'
+      group_by: ['alertname', 'category', 'severity']
+
+    # SLO breaches
+    - match:
+        category: slo
+      receiver: 'team-sre'
+      group_by: ['alertname', 'category', 'severity']
+      routes:
+        - match:
+            severity: critical
+          receiver: 'pagerduty-sre'
+          group_wait: 10s
+          repeat_interval: 1h
+
+inhibit_rules:
+  # Inhibit warning alerts if there's a critical alert for the same system
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ['category']
+
+receivers:
+  - name: 'team-trading'
+    slack_configs:
+      - channel: '#trading-alerts'
+        send_resolved: true
+        title: '{{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+        footer: '{{ template "slack.footer" . }}'
+
+  - name: 'team-risk'
+    slack_configs:
+      - channel: '#risk-alerts'
+        send_resolved: true
+        title: '{{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+        footer: '{{ template "slack.footer" . }}'
+
+  - name: 'team-infrastructure'
+    slack_configs:
+      - channel: '#infra-alerts'
+        send_resolved: true
+        title: '{{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+        footer: '{{ template "slack.footer" . }}'
+
+  - name: 'team-market-data'
+    slack_configs:
+      - channel: '#market-data-alerts'
+        send_resolved: true
+        title: '{{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+        footer: '{{ template "slack.footer" . }}'
+
+  - name: 'team-sre'
+    slack_configs:
+      - channel: '#sre-alerts'
+        send_resolved: true
+        title: '{{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+        footer: '{{ template "slack.footer" . }}'
+
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+        send_resolved: true
+        description: '{{ template "pagerduty.description" . }}'
+        severity: critical
+        class: '{{ .GroupLabels.category }}'
+        component: '{{ .GroupLabels.alertname }}'
+
+  - name: 'pagerduty-trading'
+    pagerduty_configs:
+      - service_key: 'YOUR_TRADING_SERVICE_KEY'
+        send_resolved: true
+        description: '{{ template "pagerduty.description" . }}'
+        severity: '{{ .CommonLabels.severity }}'
+        class: 'trading'
+        component: '{{ .GroupLabels.alertname }}'
+
+  - name: 'pagerduty-risk'
+    pagerduty_configs:
+      - service_key: 'YOUR_RISK_SERVICE_KEY'
+        send_resolved: true
+        description: '{{ template "pagerduty.description" . }}'
+        severity: '{{ .CommonLabels.severity }}'
+        class: 'risk'
+        component: '{{ .GroupLabels.alertname }}'
+
+  - name: 'pagerduty-infrastructure'
+    pagerduty_configs:
+      - service_key: 'YOUR_INFRASTRUCTURE_SERVICE_KEY'
+        send_resolved: true
+        description: '{{ template "pagerduty.description" . }}'
+        severity: '{{ .CommonLabels.severity }}'
+        class: 'infrastructure'
+        component: '{{ .GroupLabels.alertname }}'
+
+  - name: 'pagerduty-sre'
+    pagerduty_configs:
+      - service_key: 'YOUR_SRE_SERVICE_KEY'
+        send_resolved: true
+        description: '{{ template "pagerduty.description" . }}'
+        severity: '{{ .CommonLabels.severity }}'
+        class: 'sre'
+        component: '{{ .GroupLabels.alertname }}'

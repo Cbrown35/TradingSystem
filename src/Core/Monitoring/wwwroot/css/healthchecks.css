@@ -1,0 +1,256 @@
+/* Trading System Health Checks UI Theme */
+
+:root {
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --danger-color: #dc3545;
+    --warning-color: #ffc107;
+    --info-color: #17a2b8;
+    --dark-color: #343a40;
+    --light-color: #f8f9fa;
+    --body-bg: #1a1d21;
+    --body-color: #e9ecef;
+}
+
+/* General Styles */
+body {
+    background-color: var(--body-bg);
+    color: var(--body-color);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.navbar {
+    background-color: var(--dark-color) !important;
+    border-bottom: 2px solid var(--primary-color);
+}
+
+.navbar-brand {
+    color: var(--primary-color) !important;
+    font-weight: bold;
+}
+
+/* Health Status Cards */
+.hc-card {
+    background-color: #2a2e32;
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1.5rem;
+    transition: transform 0.2s ease-in-out;
+}
+
+.hc-card:hover {
+    transform: translateY(-2px);
+}
+
+.hc-card .card-header {
+    background-color: #343a40;
+    border-bottom: 1px solid var(--primary-color);
+    color: var(--light-color);
+    font-weight: 600;
+}
+
+/* Status Indicators */
+.status-healthy {
+    color: var(--success-color) !important;
+    background-color: rgba(40, 167, 69, 0.1);
+    border-color: var(--success-color);
+}
+
+.status-unhealthy {
+    color: var(--danger-color) !important;
+    background-color: rgba(220, 53, 69, 0.1);
+    border-color: var(--danger-color);
+}
+
+.status-degraded {
+    color: var(--warning-color) !important;
+    background-color: rgba(255, 193, 7, 0.1);
+    border-color: var(--warning-color);
+}
+
+/* Metrics and Charts */
+.metric-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.chart-container {
+    background-color: #2a2e32;
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+/* Tables */
+.table {
+    color: var(--body-color);
+    background-color: #2a2e32;
+}
+
+.table thead th {
+    background-color: #343a40;
+    border-bottom: 2px solid var(--primary-color);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.1);
+}
+
+/* Badges */
+.badge {
+    padding: 0.5em 0.8em;
+    font-weight: 500;
+    border-radius: 4px;
+}
+
+.badge-healthy {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.badge-unhealthy {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.badge-degraded {
+    background-color: var(--warning-color);
+    color: black;
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+}
+
+/* Alerts */
+.alert {
+    border-radius: 8px;
+    border-left-width: 4px;
+}
+
+.alert-success {
+    background-color: rgba(40, 167, 69, 0.1);
+    border-left-color: var(--success-color);
+    color: var(--success-color);
+}
+
+.alert-danger {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-left-color: var(--danger-color);
+    color: var(--danger-color);
+}
+
+.alert-warning {
+    background-color: rgba(255, 193, 7, 0.1);
+    border-left-color: var(--warning-color);
+    color: var(--warning-color);
+}
+
+/* Tooltips */
+.tooltip {
+    font-size: 0.875rem;
+}
+
+.tooltip-inner {
+    background-color: var(--dark-color);
+    border: 1px solid var(--primary-color);
+}
+
+/* Loading Spinner */
+.spinner-border {
+    color: var(--primary-color);
+}
+
+/* Timeline */
+.timeline {
+    border-left: 2px solid var(--primary-color);
+    padding-left: 20px;
+    margin-left: 10px;
+}
+
+.timeline-item {
+    margin-bottom: 1.5rem;
+    position: relative;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -26px;
+    top: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--primary-color);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .hc-card {
+        margin-bottom: 1rem;
+    }
+
+    .metric-value {
+        font-size: 1.25rem;
+    }
+
+    .timeline {
+        margin-left: 0;
+    }
+}
+
+/* Dark Mode Optimizations */
+@media (prefers-color-scheme: dark) {
+    .modal-content {
+        background-color: #2a2e32;
+    }
+
+    .modal-header {
+        border-bottom-color: var(--primary-color);
+    }
+
+    .modal-footer {
+        border-top-color: var(--primary-color);
+    }
+
+    .dropdown-menu {
+        background-color: #2a2e32;
+        border-color: var(--primary-color);
+    }
+
+    .dropdown-item {
+        color: var(--body-color);
+    }
+
+    .dropdown-item:hover {
+        background-color: rgba(0, 123, 255, 0.1);
+    }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #2a2e32;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #0056b3;
+}

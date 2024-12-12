@@ -1,0 +1,67 @@
+{{ define "email.subject" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }} - {{ .GroupLabels.category }}
+{{ end }}
+
+{{ define "email.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Trading System Alert</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #333; }
+        .header { background: #f8f9fa; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+        .alert { margin-bottom: 15px; padding: 15px; border-radius: 4px; }
+        .critical { background: #fff5f5; border-left: 4px solid #dc3545; }
+        .warning { background: #fff3cd; border-left: 4px solid #ffc107; }
+        .resolved { background: #d4edda; border-left: 4px solid #28a745; }
+        .details { margin-top: 10px; }
+        .metric { font-family: monospace; }
+        .footer { margin-top: 20px; font-size: 12px; color: #6c757d; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>{{ .GroupLabels.alertname }}</h2>
+        <p>Category: {{ .GroupLabels.category }}</p>
+        <p>Status: {{ .Status | toUpper }}</p>
+    </div>
+
+    {{ if .Alerts.Firing }}
+    <h3>🔥 Active Alerts ({{ .Alerts.Firing | len }}):</h3>
+    {{ range .Alerts.Firing }}
+    <div class="alert {{ .Labels.severity }}">
+        <h4>{{ .Labels.alertname }}</h4>
+        <div class="details">
+            <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+            <p><strong>Started:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+            {{ if .Annotations.runbook_url }}
+            <p><strong>Runbook:</strong> <a href="{{ .Annotations.runbook_url }}">View Runbook</a></p>
+            {{ end }}
+            <p><strong>Metrics:</strong></p>
+            <pre class="metric">{{ .GeneratorURL }}</pre>
+        </div>
+    </div>
+    {{ end }}
+    {{ end }}
+
+    {{ if .Alerts.Resolved }}
+    <h3>✅ Resolved Alerts ({{ .Alerts.Resolved | len }}):</h3>
+    {{ range .Alerts.Resolved }}
+    <div class="alert resolved">
+        <h4>{{ .Labels.alertname }}</h4>
+        <div class="details">
+            <p><strong>Resolved:</strong> {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+            <p><strong>Duration:</strong> {{ duration .StartsAt .EndsAt }}</p>
+        </div>
+    </div>
+    {{ end }}
+    {{ end }}
+
+    <div class="footer">
+        <p>Trading System Monitoring</p>
+        <p>View in <a href="{{ .ExternalURL }}">Alertmanager</a></p>
+    </div>
+</body>
+</html>
+{{ end }}

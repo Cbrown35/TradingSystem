@@ -1,0 +1,124 @@
+{
+  "Monitoring": {
+    "HealthChecks": {
+      "Enabled": true,
+      "IntervalSeconds": 15,
+      "TimeoutSeconds": 5,
+      "UI": {
+        "Path": "/healthchecks-ui",
+        "ApiPath": "/healthchecks-api",
+        "PageTitle": "Trading System Health Status (Development)",
+        "CustomStylesheetUrl": "/css/healthchecks.css",
+        "ShowDetailedErrors": true,
+        "Authentication": {
+          "Enabled": false
+        }
+      },
+      "Cache": {
+        "Enabled": true,
+        "UseRedis": false,
+        "TimeToLiveSeconds": 15,
+        "SlidingExpirationSeconds": 5
+      },
+      "RateLimit": {
+        "Enabled": false
+      },
+      "Compression": {
+        "Enabled": true,
+        "Level": "fastest",
+        "MinimumSizeBytes": 1024,
+        "PreferBrotli": true
+      },
+      "Logging": {
+        "Enabled": true,
+        "StoreInDatabase": false,
+        "WriteToFile": true,
+        "LogFilePath": "logs/health-checks-dev.log"
+      },
+      "Tags": [
+        {
+          "Name": "trading",
+          "Color": "#28a745",
+          "HealthChecks": [
+            "trading_system",
+            "strategy_execution"
+          ]
+        },
+        {
+          "Name": "infrastructure",
+          "Color": "#6c757d",
+          "HealthChecks": [
+            "database",
+            "redis",
+            "node"
+          ]
+        },
+        {
+          "Name": "market_data",
+          "Color": "#17a2b8",
+          "HealthChecks": [
+            "market_data_feed",
+            "price_updates"
+          ]
+        },
+        {
+          "Name": "risk",
+          "Color": "#dc3545",
+          "HealthChecks": [
+            "risk_management",
+            "position_limits"
+          ]
+        }
+      ],
+      "Notifications": {
+        "Enabled": true,
+        "MinimumSecondsBetweenNotifications": 60,
+        "Channels": [
+          {
+            "Name": "development_alerts",
+            "Type": "slack",
+            "Settings": {
+              "WebhookUrl": "https://hooks.slack.com/services/YOUR_DEV_WEBHOOK_URL",
+              "Channel": "#trading-alerts-dev",
+              "Username": "Trading System Monitor (Dev)"
+            },
+            "Filter": {
+              "IncludeTags": ["trading", "market_data", "risk"],
+              "MinimumStatus": ["warning"]
+            }
+          }
+        ]
+      }
+    },
+    "Metrics": {
+      "Enabled": true,
+      "CollectionInterval": "00:00:05",
+      "RetentionPeriod": "1.00:00:00",
+      "PrometheusEndpoint": "/metrics",
+      "ExporterPort": 9090,
+      "Development": {
+        "EnableDetailedMetrics": true,
+        "EnableDebugEndpoints": true,
+        "MetricsPath": "/metrics-debug"
+      }
+    },
+    "Development": {
+      "MockExchanges": true,
+      "SimulatedTrading": true,
+      "LocalDataFeeds": true,
+      "DebugLogging": true,
+      "MockNotifications": true,
+      "DisableRealMoneyTrading": true,
+      "TestAccounts": {
+        "Exchange": "test_exchange_key",
+        "MarketData": "test_market_data_key",
+        "Notifications": "test_notification_key"
+      },
+      "Endpoints": {
+        "Exchange": "http://localhost:5001",
+        "MarketData": "http://localhost:5002",
+        "RiskManagement": "http://localhost:5003"
+      }
+    }
+  }
+}

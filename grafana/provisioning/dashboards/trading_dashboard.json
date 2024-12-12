@@ -1,0 +1,239 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "Trading Performance",
+      "type": "row",
+      "panels": [
+        {
+          "title": "Daily P&L",
+          "type": "graph",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "trading:daily_pnl:sum",
+              "legendFormat": "Daily P&L"
+            }
+          ]
+        },
+        {
+          "title": "Win Rate",
+          "type": "gauge",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "strategy:win_rate:ratio1h",
+              "legendFormat": "Win Rate"
+            }
+          ],
+          "options": {
+            "minValue": 0,
+            "maxValue": 1,
+            "thresholds": [
+              { "value": 0.4, "color": "red" },
+              { "value": 0.5, "color": "yellow" },
+              { "value": 0.6, "color": "green" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "title": "Risk Metrics",
+      "type": "row",
+      "panels": [
+        {
+          "title": "Portfolio Exposure",
+          "type": "gauge",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "portfolio:exposure:current",
+              "legendFormat": "Exposure"
+            }
+          ]
+        },
+        {
+          "title": "Current Drawdown",
+          "type": "stat",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "portfolio:drawdown:current",
+              "legendFormat": "Drawdown"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "System Health",
+      "type": "row",
+      "panels": [
+        {
+          "title": "Error Rate",
+          "type": "graph",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "job:request_errors:ratio5m",
+              "legendFormat": "Error Rate"
+            }
+          ]
+        },
+        {
+          "title": "Trade Latency",
+          "type": "heatmap",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "rate(trade_execution_duration_seconds_bucket[5m])",
+              "legendFormat": "Latency"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Market Data",
+      "type": "row",
+      "panels": [
+        {
+          "title": "Data Delay",
+          "type": "graph",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "market:data_delay:avg1m",
+              "legendFormat": "Delay (ms)"
+            }
+          ]
+        },
+        {
+          "title": "Update Frequency",
+          "type": "graph",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "market:update_frequency:rate5m",
+              "legendFormat": "Updates/sec"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Strategy Analysis",
+      "type": "row",
+      "panels": [
+        {
+          "title": "Strategy Performance",
+          "type": "table",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "strategy:sharpe_ratio:1d",
+              "legendFormat": "Sharpe Ratio"
+            },
+            {
+              "expr": "strategy:sortino_ratio:1d",
+              "legendFormat": "Sortino Ratio"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Infrastructure",
+      "type": "row",
+      "panels": [
+        {
+          "title": "CPU Usage",
+          "type": "graph",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "job:cpu_usage:avg5m",
+              "legendFormat": "CPU %"
+            }
+          ]
+        },
+        {
+          "title": "Memory Usage",
+          "type": "graph",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "job:memory_usage:avg5m",
+              "legendFormat": "Memory %"
+            }
+          ]
+        },
+        {
+          "title": "Database Connections",
+          "type": "graph",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "database:connection_utilization:ratio5m",
+              "legendFormat": "Connection %"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 27,
+  "style": "dark",
+  "tags": ["trading"],
+  "templating": {
+    "list": [
+      {
+        "name": "strategy",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(strategy_name)"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ]
+  },
+  "timezone": "browser",
+  "title": "Trading System Dashboard",
+  "uid": "trading_system",
+  "version": 1
+}

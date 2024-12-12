@@ -1,0 +1,85 @@
+{{ define "pagerduty.description" }}
+[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }} - {{ .GroupLabels.category }}
+
+{{ if eq .Status "firing" }}
+Active Alerts:
+{{ range .Alerts.Firing }}
+Severity: {{ .Labels.severity | toUpper }}
+Summary: {{ .Annotations.summary }}
+Description: {{ .Annotations.description }}
+Started: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+{{ if .Annotations.runbook_url }}Runbook: {{ .Annotations.runbook_url }}{{ end }}
+Metrics: {{ .GeneratorURL }}
+
+Labels:
+{{- range .Labels.SortedPairs }}
+  {{ .Name }}: {{ .Value }}
+{{- end }}
+
+{{ if .Annotations.dashboard }}Dashboard: {{ .Annotations.dashboard }}{{ end }}
+{{ if .Annotations.playbook }}Playbook: {{ .Annotations.playbook }}{{ end }}
+{{ end }}
+{{ end }}
+
+{{ if .Alerts.Resolved }}
+Resolved Alerts:
+{{ range .Alerts.Resolved }}
+Alert: {{ .Labels.alertname }}
+Resolved at: {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}
+Duration: {{ duration .StartsAt .EndsAt }}
+{{ end }}
+{{ end }}
+
+View in Alertmanager: {{ .ExternalURL }}
+{{ end }}
+
+{{ define "pagerduty.client" }}Trading System{{ end }}
+{{ define "pagerduty.client_url" }}{{ .ExternalURL }}{{ end }}
+
+{{ define "pagerduty.incident_key" }}
+{{- if eq .Status "firing" -}}
+    {{ range .Alerts.Firing }}{{ .Labels.alertname }}{{ end }}
+{{- else -}}
+    {{ range .Alerts.Resolved }}{{ .Labels.alertname }}{{ end }}
+{{- end -}}
+{{ end }}
+
+{{ define "pagerduty.custom_details" }}
+{
+    "alert_status": "{{ .Status }}",
+    "num_firing": {{ .Alerts.Firing | len }},
+    "num_resolved": {{ .Alerts.Resolved | len }},
+    "category": "{{ .GroupLabels.category }}",
+    "severity": "{{ .CommonLabels.severity }}",
+    "environment": "{{ .CommonLabels.environment }}",
+    "cluster": "{{ .CommonLabels.cluster }}",
+    "service": "trading_system",
+    "team": "{{ if eq .GroupLabels.category "trading" }}trading{{ else if eq .GroupLabels.category "risk" }}risk{{ else if eq .GroupLabels.category "infrastructure" }}infra{{ else if eq .GroupLabels.category "market_data" }}market-data{{ else }}sre{{ end }}"
+}
+{{ end }}
+
+{{ define "pagerduty.component" }}
+{{- if .CommonLabels.component -}}
+    {{ .CommonLabels.component }}
+{{- else -}}
+    {{ .GroupLabels.alertname }}
+{{- end -}}
+{{ end }}
+
+{{ define "pagerduty.group" }}
+{{- if .CommonLabels.team -}}
+    {{ .CommonLabels.team }}
+{{- else -}}
+    trading_system
+{{- end -}}
+{{ end }}
+
+{{ define "pagerduty.class" }}
+{{- if eq .CommonLabels.severity "critical" -}}
+    CRITICAL
+{{- else if eq .CommonLabels.severity "warning" -}}
+    WARNING
+{{- else -}}
+    INFO
+{{- end -}}
+{{ end }}

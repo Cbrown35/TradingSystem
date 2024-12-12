@@ -1,0 +1,64 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+rule_files:
+  - "rules/recording_rules.yml"
+  - "alerts/trading_alerts.yml"
+
+scrape_configs:
+  - job_name: trading_system
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+            - localhost:5000
+
+  - job_name: health_checks
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+            - localhost:5000
+    metrics_path: /health
+
+  - job_name: market_data
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+            - localhost:5001
+
+  - job_name: strategy_execution
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+            - localhost:5002
+
+  - job_name: risk_management
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+            - localhost:5003
+
+  - job_name: database
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+            - localhost:9187
+
+  - job_name: redis
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+            - localhost:9121
+
+  - job_name: node
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+            - localhost:9100

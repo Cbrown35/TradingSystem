@@ -1,0 +1,138 @@
+{
+  "Monitoring": {
+    "HealthChecks": {
+      "Enabled": true,
+      "IntervalSeconds": 30,
+      "TimeoutSeconds": 5,
+      "UI": {
+        "Path": "/healthchecks-ui",
+        "ApiPath": "/healthchecks-api",
+        "PageTitle": "Trading System Health Status",
+        "CustomStylesheetUrl": "/css/healthchecks.css",
+        "ShowDetailedErrors": true,
+        "Authentication": {
+          "Enabled": true,
+          "Provider": "basic",
+          "BasicAuth": {
+            "Username": "admin",
+            "Password": "trading_system_2024"
+          }
+        }
+      },
+      "Cache": {
+        "Enabled": true,
+        "UseRedis": true,
+        "RedisConnectionString": "localhost:6379",
+        "TimeToLiveSeconds": 30,
+        "SlidingExpirationSeconds": 10
+      },
+      "RateLimit": {
+        "Enabled": true,
+        "RequestsPerMinute": 60,
+        "BurstSize": 10,
+        "WhitelistedIPs": [],
+        "WhitelistedUsers": ["monitoring_service"]
+      },
+      "Compression": {
+        "Enabled": true,
+        "Level": "optimal",
+        "MinimumSizeBytes": 1024,
+        "PreferBrotli": true
+      },
+      "Logging": {
+        "Enabled": true,
+        "StoreInDatabase": true,
+        "WriteToFile": true,
+        "LogFilePath": "logs/health-checks.log"
+      },
+      "Tags": [
+        {
+          "Name": "trading",
+          "Color": "#28a745",
+          "HealthChecks": [
+            "trading_system",
+            "strategy_execution"
+          ]
+        },
+        {
+          "Name": "infrastructure",
+          "Color": "#6c757d",
+          "HealthChecks": [
+            "database",
+            "redis",
+            "node"
+          ]
+        },
+        {
+          "Name": "market_data",
+          "Color": "#17a2b8",
+          "HealthChecks": [
+            "market_data_feed",
+            "price_updates"
+          ]
+        },
+        {
+          "Name": "risk",
+          "Color": "#dc3545",
+          "HealthChecks": [
+            "risk_management",
+            "position_limits"
+          ]
+        }
+      ],
+      "Notifications": {
+        "Enabled": true,
+        "MinimumSecondsBetweenNotifications": 300,
+        "Channels": [
+          {
+            "Name": "critical_alerts",
+            "Type": "email",
+            "Settings": {
+              "To": "alerts@tradingsystem.com",
+              "From": "monitoring@tradingsystem.com",
+              "SmtpServer": "smtp.tradingsystem.com",
+              "SmtpPort": "587",
+              "UseSSL": true
+            },
+            "Filter": {
+              "IncludeTags": ["trading", "risk"],
+              "MinimumStatus": ["critical"]
+            }
+          },
+          {
+            "Name": "team_notifications",
+            "Type": "slack",
+            "Settings": {
+              "WebhookUrl": "https://hooks.slack.com/services/YOUR_WEBHOOK_URL",
+              "Channel": "#trading-alerts",
+              "Username": "Trading System Monitor"
+            },
+            "Filter": {
+              "IncludeTags": ["trading", "market_data", "risk"],
+              "MinimumStatus": ["warning"]
+            }
+          },
+          {
+            "Name": "emergency_alerts",
+            "Type": "pagerduty",
+            "Settings": {
+              "ServiceKey": "YOUR_PAGERDUTY_SERVICE_KEY",
+              "RoutingKey": "YOUR_ROUTING_KEY"
+            },
+            "Filter": {
+              "IncludeTags": ["trading", "risk"],
+              "MinimumStatus": ["critical"]
+            }
+          }
+        ]
+      }
+    },
+    "Metrics": {
+      "Enabled": true,
+      "CollectionInterval": "00:00:15",
+      "RetentionPeriod": "30.00:00:00",
+      "PrometheusEndpoint": "/metrics",
+      "ExporterPort": 9090
+    }
+  }
+}

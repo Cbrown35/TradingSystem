@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  tradingsystem:
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+      - DOTNET_USE_POLLING_FILE_WATCHER=1
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=tradingsystem_dev;Username=postgres;Password=postgres
+      - Redis__ConnectionString=redis:6379
+      - Logging__LogLevel__Default=Debug
+      - Logging__LogLevel__Microsoft=Information
+      - Logging__LogLevel__Microsoft.Hosting.Lifetime=Information
+    volumes:
+      - ${APPDATA}/Microsoft/UserSecrets:/root/.microsoft/usersecrets:ro
+      - ${APPDATA}/ASP.NET/Https:/root/.aspnet/https:ro
+      - ./src:/app/src:ro
+    ports:
+      - "5000:80"
+      - "5001:443"
+
+  postgres:
+    environment:
+      - POSTGRES_DB=tradingsystem_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./scripts/init-dev-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  redis:
+    command: redis-server --appendonly yes --requirepass devpassword
+    ports:
+      - "6379:6379"
+
+  pgadmin:
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=dev@tradingsystem.com
+      - PGADMIN_DEFAULT_PASSWORD=devpassword
+    ports:
+      - "5050:80"
+
+  # Additional development services
+  seq:
+    image: datalust/seq:latest
+    container_name: trading-seq
+    environment:
+      - ACCEPT_EULA=Y
+    ports:
+      - "5341:80"
+    volumes:
+      - seq-data:/data
+    networks:
+      - trading-network
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: trading-mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - trading-network
+
+  # Development tools
+  adminer:
+    image: adminer
+    container_name: trading-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - trading-network
+    depends_on:
+      - postgres
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: trading-redis-commander
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:devpassword
+    ports:
+      - "8081:8081"
+    networks:
+      - trading-network
+    depends_on:
+      - redis
+
+volumes:
+  seq-data:
+
+networks:
+  trading-network:
+    driver: bridge

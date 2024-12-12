@@ -1,0 +1,78 @@
+{{ define "slack.title" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }} - {{ .GroupLabels.category }}
+{{ end }}
+
+{{ define "slack.text" }}
+{{ if eq .Status "firing" }}
+*Active Alerts:*
+{{ range .Alerts.Firing }}
+• *{{ .Labels.severity | toUpper }}*: {{ .Annotations.summary }}
+  {{ .Annotations.description }}
+  *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+  {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+  *Metrics:* {{ .GeneratorURL }}
+{{ end }}
+{{ end }}
+
+{{ if .Alerts.Resolved }}
+*Resolved Alerts:*
+{{ range .Alerts.Resolved }}
+• *{{ .Labels.alertname }}*
+  Resolved at {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}
+  Duration: {{ duration .StartsAt .EndsAt }}
+{{ end }}
+{{ end }}
+{{ end }}
+
+{{ define "slack.footer" }}
+{{- if eq .Status "firing" }}
+:fire: {{ .Alerts.Firing | len }} alert(s) firing
+{{- else }}
+:white_check_mark: All alerts resolved
+{{- end }}
+| <{{ .ExternalURL }}|View in Alertmanager>
+{{ end }}
+
+{{ define "slack.color" }}
+{{- if eq .Status "firing" -}}
+    {{- if eq .CommonLabels.severity "critical" -}}
+        danger
+    {{- else if eq .CommonLabels.severity "warning" -}}
+        warning
+    {{- else -}}
+        #439FE0
+    {{- end -}}
+{{- else -}}
+    good
+{{- end -}}
+{{ end }}
+
+{{ define "slack.icon_emoji" }}
+{{- if eq .Status "firing" -}}
+    {{- if eq .CommonLabels.severity "critical" -}}
+        :red_circle:
+    {{- else if eq .CommonLabels.severity "warning" -}}
+        :warning:
+    {{- else -}}
+        :information_source:
+    {{- end -}}
+{{- else -}}
+    :white_check_mark:
+{{- end -}}
+{{ end }}
+
+{{ define "slack.link_names" }}true{{ end }}
+
+{{ define "slack.channel_tags" }}
+{{- if eq .CommonLabels.category "trading" -}}
+    @trading-team
+{{- else if eq .CommonLabels.category "risk" -}}
+    @risk-team
+{{- else if eq .CommonLabels.category "infrastructure" -}}
+    @infra-team
+{{- else if eq .CommonLabels.category "market_data" -}}
+    @market-data-team
+{{- else if eq .CommonLabels.category "slo" -}}
+    @sre-team
+{{- end -}}
+{{ end }}

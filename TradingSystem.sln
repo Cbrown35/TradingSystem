@@ -1,0 +1,61 @@
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{5D9E45F7-5D9E-4A04-8736-583667032676}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Core", "src\Core\Core.csproj", "{CCAEACB8-450F-4FBD-856C-EAEAEE607F4B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StrategySearch", "src\StrategySearch\StrategySearch.csproj", "{ADEA2C14-C845-4799-BEA4-E5821E562E05}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RealTrading", "src\RealTrading\RealTrading.csproj", "{C883674F-2114-4522-AA43-4BD2524E8D2F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Common", "src\Common\Common.csproj", "{E5491F70-76B7-4B75-83A0-4DB1998A18D8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Infrastructure", "src\Infrastructure\Infrastructure.csproj", "{67B0C52D-751B-4ACD-A835-91AF606E2CB6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingSystem.Console", "src\TradingSystem.Console\TradingSystem.Console.csproj", "{B2B2C52D-751B-4ACD-A835-91AF606E2CB7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CCAEACB8-450F-4FBD-856C-EAEAEE607F4B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CCAEACB8-450F-4FBD-856C-EAEAEE607F4B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CCAEACB8-450F-4FBD-856C-EAEAEE607F4B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CCAEACB8-450F-4FBD-856C-EAEAEE607F4B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ADEA2C14-C845-4799-BEA4-E5821E562E05}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ADEA2C14-C845-4799-BEA4-E5821E562E05}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ADEA2C14-C845-4799-BEA4-E5821E562E05}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ADEA2C14-C845-4799-BEA4-E5821E562E05}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C883674F-2114-4522-AA43-4BD2524E8D2F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C883674F-2114-4522-AA43-4BD2524E8D2F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C883674F-2114-4522-AA43-4BD2524E8D2F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C883674F-2114-4522-AA43-4BD2524E8D2F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E5491F70-76B7-4B75-83A0-4DB1998A18D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E5491F70-76B7-4B75-83A0-4DB1998A18D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E5491F70-76B7-4B75-83A0-4DB1998A18D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E5491F70-76B7-4B75-83A0-4DB1998A18D8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{67B0C52D-751B-4ACD-A835-91AF606E2CB6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{67B0C52D-751B-4ACD-A835-91AF606E2CB6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{67B0C52D-751B-4ACD-A835-91AF606E2CB6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{67B0C52D-751B-4ACD-A835-91AF606E2CB6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2B2C52D-751B-4ACD-A835-91AF606E2CB7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2B2C52D-751B-4ACD-A835-91AF606E2CB7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2B2C52D-751B-4ACD-A835-91AF606E2CB7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2B2C52D-751B-4ACD-A835-91AF606E2CB7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{CCAEACB8-450F-4FBD-856C-EAEAEE607F4B} = {5D9E45F7-5D9E-4A04-8736-583667032676}
+		{ADEA2C14-C845-4799-BEA4-E5821E562E05} = {5D9E45F7-5D9E-4A04-8736-583667032676}
+		{C883674F-2114-4522-AA43-4BD2524E8D2F} = {5D9E45F7-5D9E-4A04-8736-583667032676}
+		{E5491F70-76B7-4B75-83A0-4DB1998A18D8} = {5D9E45F7-5D9E-4A04-8736-583667032676}
+		{67B0C52D-751B-4ACD-A835-91AF606E2CB6} = {5D9E45F7-5D9E-4A04-8736-583667032676}
+		{B2B2C52D-751B-4ACD-A835-91AF606E2CB7} = {5D9E45F7-5D9E-4A04-8736-583667032676}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,156 @@
+@using Microsoft.Extensions.Diagnostics.HealthChecks
+@model HealthReport
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Trading System Health Status</title>
+    <link rel="stylesheet" href="~/css/healthchecks.css">
+    <link rel="icon" type="image/svg+xml" href="~/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="~/favicon.ico">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Trading System Health Status</h1>
+            <div class="status-summary">
+                <div class="status-badge @(Model.Status == HealthStatus.Healthy ? "status-healthy" : Model.Status == HealthStatus.Degraded ? "status-degraded" : "status-unhealthy")">
+                    @Model.Status
+                </div>
+                <div class="timestamp">
+                    Last Updated: @DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC")
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div class="health-checks">
+                @foreach (var entry in Model.Entries)
+                {
+                    <div class="health-check-card @(entry.Value.Status == HealthStatus.Healthy ? "status-healthy" : entry.Value.Status == HealthStatus.Degraded ? "status-degraded" : "status-unhealthy")">
+                        <div class="card-header">
+                            <h3>@entry.Key</h3>
+                            <span class="status-badge">@entry.Value.Status</span>
+                        </div>
+                        <div class="card-body">
+                            @if (entry.Value.Description != null)
+                            {
+                                <p class="description">@entry.Value.Description</p>
+                            }
+
+                            @if (entry.Value.Data.Any())
+                            {
+                                <div class="metrics">
+                                    <h4>Metrics</h4>
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Metric</th>
+                                                <th>Value</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var item in entry.Value.Data)
+                                            {
+                                                <tr>
+                                                    <td>@item.Key</td>
+                                                    <td>@item.Value</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+
+                            @if (entry.Value.Exception != null)
+                            {
+                                <div class="error">
+                                    <h4>Error</h4>
+                                    <pre>@entry.Value.Exception.Message</pre>
+                                    @if (entry.Value.Exception.StackTrace != null)
+                                    {
+                                        <details>
+                                            <summary>Stack Trace</summary>
+                                            <pre>@entry.Value.Exception.StackTrace</pre>
+                                        </details>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </main>
+
+        <footer>
+            <div class="system-info">
+                <p>Environment: @Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")</p>
+                <p>Machine: @Environment.MachineName</p>
+                <p>Process Uptime: @(DateTime.Now - Process.GetCurrentProcess().StartTime)</p>
+            </div>
+            <div class="links">
+                <a href="/metrics">Metrics</a>
+                <a href="/healthchecks-ui">Health Checks UI</a>
+                <a href="/swagger">API Documentation</a>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Auto-refresh the page every 30 seconds
+        setTimeout(() => window.location.reload(), 30000);
+
+        // Format timestamps
+        document.querySelectorAll('.timestamp').forEach(element => {
+            const date = new Date(element.textContent);
+            element.title = element.textContent;
+            element.textContent = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+                .format(-Math.round((new Date() - date) / 1000), 'seconds');
+        });
+
+        // Add copy functionality for error messages
+        document.querySelectorAll('.error pre').forEach(element => {
+            element.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(element.textContent);
+                    const original = element.textContent;
+                    element.textContent = 'Copied!';
+                    setTimeout(() => element.textContent = original, 1000);
+                } catch (err) {
+                    console.error('Failed to copy:', err);
+                }
+            });
+        });
+
+        // Add visual feedback for status changes
+        const statusBadges = document.querySelectorAll('.status-badge');
+        let lastStatus = {};
+        
+        statusBadges.forEach(badge => {
+            const key = badge.closest('.health-check-card')?.querySelector('h3')?.textContent || 'overall';
+            lastStatus[key] = badge.textContent;
+            
+            const observer = new MutationObserver(mutations => {
+                mutations.forEach(mutation => {
+                    if (mutation.type === 'characterData' || mutation.type === 'childList') {
+                        const newStatus = badge.textContent;
+                        if (lastStatus[key] !== newStatus) {
+                            badge.classList.add('status-changed');
+                            setTimeout(() => badge.classList.remove('status-changed'), 1000);
+                            lastStatus[key] = newStatus;
+                        }
+                    }
+                });
+            });
+            
+            observer.observe(badge, { 
+                characterData: true, 
+                childList: true, 
+                subtree: true 
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+groups:
+  - name: trading_system_alerts
+    rules:
+      # System health alerts
+      - alert: TradingSystemDown
+        expr: trading_system:health_score:avg < 1
+        for: 1m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "Trading system is down"
+          description: "The trading system health check has failed for more than 1 minute"
+
+      - alert: ComponentHealthDegraded
+        expr: trading_system:component_health:ratio < 0.8
+        for: 2m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "System components degraded"
+          description: "{{ $value | humanize }}% of system components are unhealthy"
+
+      # Trading alerts
+      - alert: HighTradeFailureRate
+        expr: trading:success_rate:ratio_5m < 0.95
+        for: 5m
+        labels:
+          severity: critical
+          category: trading
+        annotations:
+          summary: "High trade failure rate"
+          description: "Trade success rate has dropped below 95% in the last 5 minutes"
+
+      - alert: SignificantProfitLoss
+        expr: trading:profit_loss:sum_1h < -1000
+        for: 1h
+        labels:
+          severity: critical
+          category: trading
+        annotations:
+          summary: "Significant trading losses"
+          description: "Trading system has lost more than $1000 in the last hour"
+
+      # Risk alerts
+      - alert: HighRiskExposure
+        expr: risk:exposure:current > 100000
+        for: 1m
+        labels:
+          severity: warning
+          category: risk
+        annotations:
+          summary: "High risk exposure"
+          description: "Current trading exposure exceeds $100,000"
+
+      - alert: MarginUsageHigh
+        expr: risk:margin_usage:ratio > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          category: risk
+        annotations:
+          summary: "High margin usage"
+          description: "Margin usage has exceeded 80% for 5 minutes"
+
+      # Market data alerts
+      - alert: MarketDataLatencyHigh
+        expr: market_data:latency:avg_5m > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          category: market_data
+        annotations:
+          summary: "High market data latency"
+          description: "Average market data latency exceeds 500ms"
+
+      - alert: LowMarketDataUpdateRate
+        expr: market_data:updates:rate_5m < 10
+        for: 1m
+        labels:
+          severity: warning
+          category: market_data
+        annotations:
+          summary: "Low market data update rate"
+          description: "Market data updates have dropped below 10 per second"
+
+      # Strategy alerts
+      - alert: SlowStrategyExecution
+        expr: strategy:execution_time:avg_5m > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: strategy
+        annotations:
+          summary: "Slow strategy execution"
+          description: "Average strategy execution time exceeds 1 second"
+
+      # Infrastructure alerts
+      - alert: HighDatabaseConnections
+        expr: infra:database_connections:current > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High database connections"
+          description: "Database connection count exceeds 80"
+
+      - alert: HighRedisMemoryUsage
+        expr: infra:redis_memory:usage_ratio > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Redis memory usage exceeds 80%"
+
+      # Error rate alerts
+      - alert: HighErrorRate
+        expr: errors:rate_5m > 10
+        for: 5m
+        labels:
+          severity: critical
+          category: errors
+        annotations:
+          summary: "High error rate"
+          description: "System is experiencing more than 10 errors per second"
+
+      # SLO alerts
+      - alert: AvailabilitySLOBreach
+        expr: slo:availability:ratio_1h < 0.999
+        for: 1h
+        labels:
+          severity: critical
+          category: slo
+        annotations:
+          summary: "Availability SLO breach"
+          description: "System availability has dropped below 99.9% in the last hour"
+
+      - alert: LatencySLOBreach
+        expr: slo:latency:ratio_1h < 0.95
+        for: 1h
+        labels:
+          severity: warning
+          category: slo
+        annotations:
+          summary: "Latency SLO breach"
+          description: "Less than 95% of requests are completing within 500ms"
+
+      # Resource alerts
+      - alert: HighCPUUsage
+        expr: resource:cpu:usage_ratio > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage exceeds 80% for 5 minutes"
+
+      - alert: HighMemoryUsage
+        expr: resource:memory:usage_bytes > 1e9
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage exceeds 1GB"
+
+      - alert: DiskSpaceRunningOut
+        expr: resource:disk:usage_ratio > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage exceeds 85%"
