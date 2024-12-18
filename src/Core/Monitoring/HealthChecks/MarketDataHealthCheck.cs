@@ -6,51 +6,68 @@ namespace TradingSystem.Core.Monitoring.HealthChecks;
 
 public class MarketDataHealthCheck : IHealthCheck
 {
-    private readonly ILogger<MarketDataHealthCheck> _logger;
     private readonly IMarketDataService _marketDataService;
+    private readonly ILogger<MarketDataHealthCheck> _logger;
+    private readonly string[] _monitoredSymbols = { "BTCUSD", "ETHUSD", "ES", "NQ" };
 
     public MarketDataHealthCheck(
-        ILogger<MarketDataHealthCheck> logger,
-        IMarketDataService marketDataService)
+        IMarketDataService marketDataService,
+        ILogger<MarketDataHealthCheck> logger)
     {
-        _logger = logger;
         _marketDataService = marketDataService;
+        _logger = logger;
     }
 
-    public async Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context,
-        CancellationToken cancellationToken = default)
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Test market data service by getting a sample price
-            var testSymbol = "BTC-USD"; // Example test symbol
-            var marketData = await _marketDataService.GetMarketData(testSymbol);
-
-            var data = new Dictionary<string, object>
+            var activeSymbols = await _marketDataService.GetActiveSymbolsAsync();
+            if (!activeSymbols.Any())
             {
-                { "LastCheckTime", DateTime.UtcNow },
-                { "TestSymbol", testSymbol },
-                { "LastPrice", marketData.LastPrice },
-                { "DataFreshness", DateTime.UtcNow - marketData.Timestamp }
-            };
+                return HealthCheckResult.Degraded("No active symbols found");
+            }
 
-            return HealthCheckResult.Healthy(
-                "Market data services are operational",
-                data);
+            var data = new Dictionary<string, object>();
+            var errors = new List<string>();
+
+            // Check market data for monitored symbols
+            foreach (var symbol in _monitoredSymbols)
+            {
+                try
+                {
+                    var marketData = await _marketDataService.GetLatestMarketDataAsync(symbol);
+                    if (marketData == null)
+                    {
+                        errors.Add($"No market data available for {symbol}");
+                        continue;
+                    }
+
+                    // Add basic metrics for each symbol
+                    data[$"{symbol}_LastUpdate"] = marketData.Timestamp;
+                    data[$"{symbol}_Price"] = marketData.Close;
+                    data[$"{symbol}_Volume"] = marketData.Volume;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error checking market data for {Symbol}", symbol);
+                    errors.Add($"Error checking {symbol}: {ex.Message}");
+                }
+            }
+
+            if (errors.Any())
+            {
+                return HealthCheckResult.Degraded(
+                    $"Market data service partially operational. Errors: {string.Join(", ", errors)}",
+                    data: data);
+            }
+
+            return HealthCheckResult.Healthy("Market data service is operational", data);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Market data health check failed");
-            return HealthCheckResult.Unhealthy(
-                "Market data services are not responding",
-                ex,
-                new Dictionary<string, object>
-                {
-                    { "LastCheckTime", DateTime.UtcNow },
-                    { "ErrorType", ex.GetType().Name },
-                    { "ErrorMessage", ex.Message }
-                });
+            return HealthCheckResult.Unhealthy("Market data health check failed", ex);
         }
     }
 }

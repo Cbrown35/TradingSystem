@@ -74,22 +74,22 @@ public class TradeRepository : RepositoryBase<Trade>, ITradeRepository
         var metrics = new TradePerformanceMetrics
         {
             TotalTrades = trades.Count,
-            WinningTrades = trades.Count(t => t.RealizedPnL > 0),
-            LosingTrades = trades.Count(t => t.RealizedPnL <= 0)
+            WinningTrades = trades.Count(t => (t.RealizedPnL ?? 0) > 0),
+            LosingTrades = trades.Count(t => (t.RealizedPnL ?? 0) <= 0)
         };
 
         if (!trades.Any()) return metrics;
 
-        var winningTrades = trades.Where(t => t.RealizedPnL > 0).ToList();
-        var losingTrades = trades.Where(t => t.RealizedPnL <= 0).ToList();
+        var winningTrades = trades.Where(t => (t.RealizedPnL ?? 0) > 0).ToList();
+        var losingTrades = trades.Where(t => (t.RealizedPnL ?? 0) <= 0).ToList();
 
         // Basic metrics
         metrics.WinRate = (decimal)metrics.WinningTrades / metrics.TotalTrades;
-        metrics.AverageWin = winningTrades.Any() ? winningTrades.Average(t => t.RealizedPnL) : 0;
-        metrics.AverageLoss = losingTrades.Any() ? Math.Abs(losingTrades.Average(t => t.RealizedPnL)) : 0;
-        metrics.LargestWin = winningTrades.Any() ? winningTrades.Max(t => t.RealizedPnL) : 0;
-        metrics.LargestLoss = losingTrades.Any() ? Math.Abs(losingTrades.Min(t => t.RealizedPnL)) : 0;
-        metrics.TotalPnL = trades.Sum(t => t.RealizedPnL);
+        metrics.AverageWin = winningTrades.Any() ? winningTrades.Average(t => t.RealizedPnL ?? 0) : 0;
+        metrics.AverageLoss = losingTrades.Any() ? Math.Abs(losingTrades.Average(t => t.RealizedPnL ?? 0)) : 0;
+        metrics.LargestWin = winningTrades.Any() ? winningTrades.Max(t => t.RealizedPnL ?? 0) : 0;
+        metrics.LargestLoss = losingTrades.Any() ? Math.Abs(losingTrades.Min(t => t.RealizedPnL ?? 0)) : 0;
+        metrics.TotalPnL = trades.Sum(t => t.RealizedPnL ?? 0);
 
         // Risk metrics
         metrics.ProfitFactor = metrics.AverageLoss != 0 ? metrics.AverageWin / metrics.AverageLoss : 0;
@@ -98,8 +98,9 @@ public class TradeRepository : RepositoryBase<Trade>, ITradeRepository
         metrics.ExpectedValue = (metrics.WinRate * metrics.AverageWin) - ((1 - metrics.WinRate) * metrics.AverageLoss);
 
         // Time-based metrics
-        metrics.AverageHoldingTime = TimeSpan.FromTicks((long)trades.Average(t => 
-            (t.CloseTime!.Value - t.OpenTime).Ticks));
+        metrics.AverageHoldingTime = TimeSpan.FromTicks((long)trades
+            .Where(t => t.CloseTime.HasValue)
+            .Average(t => (t.CloseTime!.Value - t.OpenTime).Ticks));
 
         // Consecutive trades
         metrics.MaxConsecutiveWins = CalculateMaxConsecutive(trades, true);
@@ -113,9 +114,9 @@ public class TradeRepository : RepositoryBase<Trade>, ITradeRepository
 
         // Performance by category
         metrics.SymbolPerformance = trades.GroupBy(t => t.Symbol)
-            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL));
+            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL ?? 0));
         metrics.StrategyPerformance = trades.GroupBy(t => t.StrategyName)
-            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL));
+            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL ?? 0));
         metrics.MonthlyReturns = CalculateMonthlyReturns(trades);
 
         // Risk-adjusted returns
@@ -149,7 +150,7 @@ public class TradeRepository : RepositoryBase<Trade>, ITradeRepository
 
         foreach (var trade in trades)
         {
-            currentEquity += trade.RealizedPnL;
+            currentEquity += trade.RealizedPnL ?? 0;
             
             if (currentEquity > peak)
             {
@@ -166,7 +167,7 @@ public class TradeRepository : RepositoryBase<Trade>, ITradeRepository
     private decimal CalculateROI(List<Trade> trades)
     {
         var initialEquity = 10000m;
-        var finalEquity = initialEquity + trades.Sum(t => t.RealizedPnL);
+        var finalEquity = initialEquity + trades.Sum(t => t.RealizedPnL ?? 0);
         return (finalEquity - initialEquity) / initialEquity;
     }
 
@@ -177,7 +178,7 @@ public class TradeRepository : RepositoryBase<Trade>, ITradeRepository
 
         foreach (var trade in trades)
         {
-            if ((winning && trade.RealizedPnL > 0) || (!winning && trade.RealizedPnL <= 0))
+            if ((winning && (trade.RealizedPnL ?? 0) > 0) || (!winning && (trade.RealizedPnL ?? 0) <= 0))
             {
                 currentConsecutive++;
                 maxConsecutive = Math.Max(maxConsecutive, currentConsecutive);
@@ -193,42 +194,45 @@ public class TradeRepository : RepositoryBase<Trade>, ITradeRepository
 
     private Dictionary<TimeSpan, decimal> CalculateHoldingTimeDistribution(List<Trade> trades)
     {
-        return trades.GroupBy(t => TimeSpan.FromHours(Math.Round((t.CloseTime!.Value - t.OpenTime).TotalHours)))
-            .ToDictionary(g => g.Key, g => g.Average(t => t.RealizedPnL));
+        return trades
+            .Where(t => t.CloseTime.HasValue)
+            .GroupBy(t => TimeSpan.FromHours(Math.Round((t.CloseTime!.Value - t.OpenTime).TotalHours)))
+            .ToDictionary(g => g.Key, g => g.Average(t => t.RealizedPnL ?? 0));
     }
 
     private Dictionary<decimal, int> CalculateProfitDistribution(List<Trade> trades)
     {
         const int buckets = 10;
-        var minProfit = trades.Min(t => t.RealizedPnL);
-        var maxProfit = trades.Max(t => t.RealizedPnL);
+        var profits = trades.Select(t => t.RealizedPnL ?? 0).ToList();
+        var minProfit = profits.Min();
+        var maxProfit = profits.Max();
         var bucketSize = (maxProfit - minProfit) / buckets;
 
-        return trades.GroupBy(t => Math.Floor(t.RealizedPnL / bucketSize) * bucketSize)
+        return trades.GroupBy(t => Math.Floor((t.RealizedPnL ?? 0) / bucketSize) * bucketSize)
             .ToDictionary(g => g.Key, g => g.Count());
     }
 
     private Dictionary<DayOfWeek, decimal> CalculateDayOfWeekPerformance(List<Trade> trades)
     {
         return trades.GroupBy(t => t.OpenTime.DayOfWeek)
-            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL));
+            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL ?? 0));
     }
 
     private Dictionary<int, decimal> CalculateHourOfDayPerformance(List<Trade> trades)
     {
         return trades.GroupBy(t => t.OpenTime.Hour)
-            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL));
+            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL ?? 0));
     }
 
     private Dictionary<string, decimal> CalculateMonthlyReturns(List<Trade> trades)
     {
         return trades.GroupBy(t => t.OpenTime.ToString("yyyy-MM"))
-            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL));
+            .ToDictionary(g => g.Key, g => g.Sum(t => t.RealizedPnL ?? 0));
     }
 
     private decimal CalculateSharpeRatio(List<Trade> trades)
     {
-        var returns = trades.Select(t => t.RealizedPnL / 10000m);
+        var returns = trades.Select(t => (t.RealizedPnL ?? 0) / 10000m).ToList();
         var averageReturn = returns.Average();
         var stdDev = CalculateStdDev(returns);
 

@@ -1,151 +1,374 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TradingSystem.Common.Interfaces;
 using TradingSystem.Common.Models;
+using TradingSystem.RealTrading.Configuration;
 
 namespace TradingSystem.RealTrading.Services;
 
 public class RiskManager : IRiskManager
 {
+    private readonly ITradeRepository _tradeRepository;
+    private readonly IRiskValidationService _validationService;
+    private readonly RiskManagerConfig _config;
+    private readonly ILogger<RiskManager> _logger;
     private readonly Dictionary<string, RiskMetrics> _riskMetrics;
-    private readonly decimal _maxRiskPerTrade = 0.02m; // 2% max risk per trade
-    private readonly decimal _maxPortfolioRisk = 0.06m; // 6% max portfolio risk
-    private readonly decimal _defaultStopLossPercent = 0.02m; // 2% default stop loss
-    private readonly decimal _defaultTakeProfitPercent = 0.04m; // 4% default take profit
 
-    public RiskManager()
+    public RiskManager(
+        ITradeRepository tradeRepository,
+        IRiskValidationService validationService,
+        IOptions<RiskManagerConfig> config,
+        ILogger<RiskManager> logger)
     {
+        _tradeRepository = tradeRepository;
+        _validationService = validationService;
+        _config = config.Value;
+        _logger = logger;
         _riskMetrics = new Dictionary<string, RiskMetrics>();
     }
 
-    public async Task<RiskMetrics> GetRiskMetrics()
+    public async Task<RiskMetrics> GetCurrentRiskMetricsAsync()
     {
-        var combinedMetrics = new RiskMetrics();
-        foreach (var metrics in _riskMetrics.Values)
+        try
         {
-            combinedMetrics.MaxDrawdown = Math.Max(combinedMetrics.MaxDrawdown, metrics.MaxDrawdown);
-            combinedMetrics.SharpeRatio = (combinedMetrics.SharpeRatio + metrics.SharpeRatio) / 2;
-            combinedMetrics.WinRate = (combinedMetrics.WinRate + metrics.WinRate) / 2;
-            combinedMetrics.ProfitFactor = (combinedMetrics.ProfitFactor + metrics.ProfitFactor) / 2;
-            combinedMetrics.ExpectedValue = (combinedMetrics.ExpectedValue + metrics.ExpectedValue) / 2;
+            var metrics = new RiskMetrics
+            {
+                AccountEquity = await CalculateAccountEquity(),
+                OpenPositions = await _tradeRepository.GetOpenPositions()
+            };
+
+            // Calculate current risk metrics
+            metrics.TotalRisk = metrics.OpenPositions.Sum(p => CalculatePositionRisk(p));
+            metrics.MarginUsed = metrics.OpenPositions.Sum(p => p.Quantity * p.EntryPrice);
+            metrics.MaxDrawdown = await CalculateMaxDrawdown();
+
+            _logger.LogDebug("Current risk metrics - Equity: {Equity}, Total Risk: {Risk}, Margin Used: {Margin}",
+                metrics.AccountEquity, metrics.TotalRisk, metrics.MarginUsed);
+
+            return metrics;
         }
-        return combinedMetrics;
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting current risk metrics");
+            throw;
+        }
     }
 
-    public async Task<RiskMetrics> UpdateRiskMetrics(Trade trade)
+    public async Task<bool> ValidateOrderAsync(Order order)
     {
-        if (!_riskMetrics.ContainsKey(trade.Symbol))
+        try
         {
-            _riskMetrics[trade.Symbol] = new RiskMetrics();
+            var currentMetrics = await GetCurrentRiskMetricsAsync();
+            var result = _validationService.ValidateOrder(order, currentMetrics);
+
+            if (!result.IsValid)
+            {
+                _logger.LogWarning("Order validation failed: {Errors}",
+                    string.Join(", ", result.ValidationErrors.Values));
+            }
+
+            return result.IsValid;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error validating order");
+            throw;
+        }
+    }
+
+    public async Task<bool> ValidatePositionSizeAsync(string symbol, decimal size)
+    {
+        try
+        {
+            var accountEquity = await CalculateAccountEquity();
+            var result = _validationService.ValidatePositionSize(symbol, size, accountEquity);
+
+            if (!result.IsValid)
+            {
+                _logger.LogWarning("Position size validation failed: {Errors}",
+                    string.Join(", ", result.ValidationErrors.Values));
+            }
+
+            return result.IsValid;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error validating position size");
+            throw;
+        }
+    }
+
+    public async Task<bool> ValidateDrawdownAsync(decimal drawdown)
+    {
+        try
+        {
+            var result = _validationService.ValidateDrawdown(drawdown);
+
+            if (!result.IsValid)
+            {
+                _logger.LogWarning("Drawdown validation failed: {Error}", result.ErrorMessage);
+            }
+
+            return result.IsValid;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error validating drawdown");
+            throw;
+        }
+    }
+
+    public async Task<decimal> CalculatePositionSizeAsync(string symbol, decimal riskPercentage)
+    {
+        try
+        {
+            var accountEquity = await CalculateAccountEquity();
+            var riskAmount = accountEquity * Math.Min(riskPercentage, _config.MaxRiskPerTrade);
+            var positionSize = riskAmount / _config.DefaultStopLossPercent;
+
+            // Validate the calculated position size
+            var result = _validationService.ValidatePositionSize(symbol, positionSize, accountEquity);
+            if (!result.IsValid)
+            {
+                _logger.LogWarning("Calculated position size validation failed: {Errors}",
+                    string.Join(", ", result.ValidationErrors.Values));
+                return 0;
+            }
+
+            return positionSize;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calculating position size");
+            throw;
+        }
+    }
+
+    public async Task<decimal> CalculateStopLossAsync(string symbol, decimal entryPrice, decimal riskAmount)
+    {
+        try
+        {
+            var accountEquity = await CalculateAccountEquity();
+            var stopLoss = entryPrice - (riskAmount / entryPrice);
+
+            var result = _validationService.ValidateStopLoss(symbol, entryPrice, stopLoss, accountEquity);
+            if (!result.IsValid)
+            {
+                _logger.LogWarning("Stop loss validation failed: {Errors}",
+                    string.Join(", ", result.ValidationErrors.Values));
+                // Return a default stop loss if validation fails
+                return entryPrice * (1 - _config.DefaultStopLossPercent);
+            }
+
+            return stopLoss;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calculating stop loss");
+            throw;
+        }
+    }
+
+    public async Task<decimal> CalculateTakeProfitAsync(string symbol, decimal entryPrice, decimal stopLoss)
+    {
+        try
+        {
+            var riskAmount = Math.Abs(entryPrice - stopLoss);
+            var takeProfit = entryPrice + (riskAmount * _config.MinRiskRewardRatio);
+
+            var result = _validationService.ValidateTakeProfit(entryPrice, stopLoss, takeProfit);
+            if (!result.IsValid)
+            {
+                _logger.LogWarning("Take profit validation failed: {Errors}",
+                    string.Join(", ", result.ValidationErrors.Values));
+                // Return a default take profit if validation fails
+                return entryPrice * (1 + _config.DefaultTakeProfitPercent);
+            }
+
+            return takeProfit;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calculating take profit");
+            throw;
+        }
+    }
+
+    public async Task UpdateRiskParametersAsync(Dictionary<string, decimal> parameters)
+    {
+        try
+        {
+            var result = _validationService.ValidateRiskParameters(parameters);
+            if (!result.IsValid)
+            {
+                throw new ArgumentException($"Invalid risk parameters: {string.Join(", ", result.ValidationErrors.Values)}");
+            }
+
+            foreach (var param in parameters)
+            {
+                switch (param.Key)
+                {
+                    case "MaxRiskPerTrade":
+                        _config.MaxRiskPerTrade = param.Value;
+                        break;
+                    case "MaxPortfolioRisk":
+                        _config.MaxPortfolioRisk = param.Value;
+                        break;
+                    case "MaxDrawdown":
+                        _config.MaxDrawdown = param.Value;
+                        break;
+                    case "MinPositionSize":
+                        _config.MinPositionSize = param.Value;
+                        break;
+                    case "MaxPositionSize":
+                        _config.MaxPositionSize = param.Value;
+                        break;
+                    case "MaxLeverage":
+                        _config.MaxLeverage = param.Value;
+                        break;
+                }
+            }
+
+            _logger.LogInformation("Updated risk parameters: {Parameters}",
+                string.Join(", ", parameters.Select(p => $"{p.Key}={p.Value}")));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating risk parameters");
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<RiskMetrics>> GetHistoricalRiskMetricsAsync(DateTime startTime, DateTime endTime)
+    {
+        try
+        {
+            var trades = await _tradeRepository.GetTradeHistory(startTime, endTime);
+            var metrics = new List<RiskMetrics>();
+            var currentMetrics = new RiskMetrics { AccountEquity = _config.InitialAccountEquity };
+
+            foreach (var trade in trades.OrderBy(t => t.OpenTime))
+            {
+                currentMetrics = await UpdateMetricsWithTrade(currentMetrics, trade);
+                metrics.Add(new RiskMetrics
+                {
+                    AccountEquity = currentMetrics.AccountEquity,
+                    MaxDrawdown = currentMetrics.MaxDrawdown,
+                    TotalRisk = currentMetrics.TotalRisk,
+                    MarginUsed = currentMetrics.MarginUsed
+                });
+            }
+
+            return metrics;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting historical risk metrics");
+            throw;
+        }
+    }
+
+    public async Task<Dictionary<string, decimal>> GetRiskLimitsAsync()
+    {
+        return new Dictionary<string, decimal>
+        {
+            ["MaxRiskPerTrade"] = _config.MaxRiskPerTrade,
+            ["MaxPortfolioRisk"] = _config.MaxPortfolioRisk,
+            ["MaxDrawdown"] = _config.MaxDrawdown,
+            ["MinPositionSize"] = _config.MinPositionSize,
+            ["MaxPositionSize"] = _config.MaxPositionSize,
+            ["MaxLeverage"] = _config.MaxLeverage
+        };
+    }
+
+    public async Task<bool> IsWithinRiskLimitsAsync(Order order)
+    {
+        try
+        {
+            var currentMetrics = await GetCurrentRiskMetricsAsync();
+            
+            // Check if adding this order would exceed any risk limits
+            var orderRisk = CalculateOrderRisk(order);
+            if (currentMetrics.TotalRisk + orderRisk > _config.MaxPortfolioRisk * currentMetrics.AccountEquity)
+            {
+                _logger.LogWarning("Order would exceed portfolio risk limit");
+                return false;
+            }
+
+            var leverage = (currentMetrics.MarginUsed + (order.Price * order.Quantity)) / currentMetrics.AccountEquity;
+            if (leverage > _config.MaxLeverage)
+            {
+                _logger.LogWarning("Order would exceed leverage limit");
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking risk limits");
+            throw;
+        }
+    }
+
+    private async Task<decimal> CalculateAccountEquity()
+    {
+        var openPositions = await _tradeRepository.GetOpenPositions();
+        return _config.InitialAccountEquity + openPositions.Sum(p => p.UnrealizedPnL ?? 0);
+    }
+
+    private async Task<decimal> CalculateMaxDrawdown()
+    {
+        var trades = await _tradeRepository.GetTradeHistory(DateTime.UtcNow.AddDays(-30), DateTime.UtcNow);
+        
+        decimal peak = _config.InitialAccountEquity;
+        decimal maxDrawdown = 0;
+        decimal currentEquity = _config.InitialAccountEquity;
+
+        foreach (var trade in trades.OrderBy(t => t.OpenTime))
+        {
+            currentEquity += trade.RealizedPnL ?? 0;
+            if (currentEquity > peak)
+            {
+                peak = currentEquity;
+            }
+
+            var drawdown = (peak - currentEquity) / peak;
+            maxDrawdown = Math.Max(maxDrawdown, drawdown);
         }
 
-        var metrics = _riskMetrics[trade.Symbol];
+        return maxDrawdown;
+    }
 
-        // Update metrics based on trade result
+    private decimal CalculatePositionRisk(Trade position)
+    {
+        return position.Quantity * Math.Abs(position.EntryPrice - (position.StopLoss ?? position.EntryPrice * 0.95m));
+    }
+
+    private decimal CalculateOrderRisk(Order order)
+    {
+        if (order.StopPrice.HasValue)
+        {
+            return Math.Abs(order.Price - order.StopPrice.Value) * order.Quantity;
+        }
+        return order.Price * order.Quantity * _config.DefaultStopLossPercent;
+    }
+
+    private async Task<RiskMetrics> UpdateMetricsWithTrade(RiskMetrics metrics, Trade trade)
+    {
         if (trade.Status == TradeStatus.Closed)
         {
-            var profitLoss = trade.RealizedPnL;
-            var riskAmount = trade.Quantity * Math.Abs(trade.EntryPrice - trade.StopLoss);
-
-            // Update win rate
-            if (profitLoss > 0)
-            {
-                metrics.WinRate = (metrics.WinRate * 0.9m) + (1 * 0.1m); // Exponential moving average
-                metrics.AverageWin = (metrics.AverageWin * 0.9m) + (profitLoss * 0.1m);
-            }
-            else
-            {
-                metrics.WinRate = metrics.WinRate * 0.9m; // Decay win rate
-                metrics.AverageLoss = (metrics.AverageLoss * 0.9m) + (Math.Abs(profitLoss) * 0.1m);
-            }
-
-            // Update profit factor
-            if (metrics.AverageLoss != 0)
-            {
-                metrics.ProfitFactor = metrics.AverageWin / metrics.AverageLoss;
-            }
-
-            // Update expected value
-            metrics.ExpectedValue = (metrics.WinRate * metrics.AverageWin) - ((1 - metrics.WinRate) * metrics.AverageLoss);
-
-            // Update value at risk
-            metrics.ValueAtRisk = Math.Max(metrics.ValueAtRisk, riskAmount);
+            metrics.AccountEquity += trade.RealizedPnL ?? 0;
+            
+            var drawdown = await CalculateMaxDrawdown();
+            metrics.MaxDrawdown = Math.Max(metrics.MaxDrawdown, drawdown);
+        }
+        else
+        {
+            metrics.TotalRisk += CalculatePositionRisk(trade);
+            metrics.MarginUsed += trade.Quantity * trade.EntryPrice;
         }
 
         return metrics;
-    }
-
-    public async Task<decimal> CalculatePositionSize(string symbol, decimal price)
-    {
-        var metrics = await GetRiskMetrics();
-        var currentRisk = metrics.PortfolioHeatmap;
-
-        // If we're approaching max portfolio risk, reduce position size
-        if (currentRisk >= _maxPortfolioRisk)
-        {
-            return 0; // No new positions
-        }
-
-        // Calculate position size based on available risk
-        var availableRisk = _maxPortfolioRisk - currentRisk;
-        var riskAmount = Math.Min(availableRisk, _maxRiskPerTrade);
-        
-        return (riskAmount * price) / _defaultStopLossPercent;
-    }
-
-    public async Task<decimal> CalculateStopLoss(string symbol, decimal entryPrice, bool isLong)
-    {
-        var stopLossAmount = entryPrice * _defaultStopLossPercent;
-        return isLong ? entryPrice - stopLossAmount : entryPrice + stopLossAmount;
-    }
-
-    public async Task<decimal> CalculateTakeProfit(string symbol, decimal entryPrice, bool isLong)
-    {
-        var takeProfitAmount = entryPrice * _defaultTakeProfitPercent;
-        return isLong ? entryPrice + takeProfitAmount : entryPrice - takeProfitAmount;
-    }
-
-    public async Task<bool> ValidateRiskParameters(string symbol, decimal positionSize, decimal stopLoss, decimal takeProfit)
-    {
-        var metrics = await GetRiskMetrics();
-        
-        // Check if total portfolio risk is acceptable
-        if (metrics.PortfolioHeatmap >= _maxPortfolioRisk)
-        {
-            return false;
-        }
-
-        // Calculate risk amount for this trade
-        var riskAmount = positionSize * Math.Abs(takeProfit - stopLoss);
-        var riskPercent = riskAmount / metrics.PortfolioHeatmap;
-
-        // Validate risk per trade
-        if (riskPercent > _maxRiskPerTrade)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    public async Task<Dictionary<string, decimal>> GetPortfolioAllocation()
-    {
-        var allocation = new Dictionary<string, decimal>();
-        var totalRisk = _riskMetrics.Values.Sum(m => m.ValueAtRisk);
-
-        foreach (var kvp in _riskMetrics)
-        {
-            allocation[kvp.Key] = totalRisk > 0 ? kvp.Value.ValueAtRisk / totalRisk : 0;
-        }
-
-        return allocation;
-    }
-
-    public async Task<Dictionary<string, decimal>> GetRiskExposure()
-    {
-        var exposure = new Dictionary<string, decimal>();
-        foreach (var kvp in _riskMetrics)
-        {
-            exposure[kvp.Key] = kvp.Value.ValueAtRisk;
-        }
-        return exposure;
     }
 }

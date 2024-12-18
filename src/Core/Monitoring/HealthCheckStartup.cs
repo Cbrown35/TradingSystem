@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -7,183 +9,146 @@ using Prometheus;
 using TradingSystem.Core.Configuration;
 using TradingSystem.Core.Monitoring.Auth;
 using TradingSystem.Core.Monitoring.HealthChecks;
+using TradingSystem.Core.Monitoring.Interfaces;
 using TradingSystem.Core.Monitoring.Middleware;
+using TradingSystem.Core.Monitoring.Models;
 using TradingSystem.Core.Monitoring.Services;
-using HealthChecks.UI.Client;
 
 namespace TradingSystem.Core.Monitoring;
 
 public static class HealthCheckStartup
 {
-    public static IServiceCollection AddTradingSystemHealthChecks(
+    public static IServiceCollection AddHealthChecking(
         this IServiceCollection services,
-        MonitoringConfig config)
+        Action<TradingSystem.Core.Configuration.MonitoringConfig> configureOptions)
     {
-        // Add health checks
-        var healthChecks = services.AddHealthChecks();
+        services.Configure(configureOptions);
 
-        // Core health checks
-        healthChecks
-            .AddCheck<MarketDataHealthCheck>(
-                "market_data",
-                tags: new[] { "market_data", "core" })
-            .AddCheck<RiskManagementHealthCheck>(
-                "risk_management",
-                tags: new[] { "risk", "core" })
-            .AddCheck<StrategyExecutionHealthCheck>(
-                "strategy_execution",
-                tags: new[] { "trading", "strategy", "core" });
+        // Add core health check services
+        services.AddSingleton<IHealthCheckService, HealthCheckService>();
+        services.AddSingleton<HealthCheckStorageService>();
+        services.AddSingleton<HealthCheckNotificationService>();
 
-        // Add system health checks
-        healthChecks
-            .AddDiskStorageHealthCheck(options =>
-            {
-                options.AddDrive("C:\\", 1024); // 1GB minimum
-            }, "disk_space", tags: new[] { "system" })
-            .AddProcessAllocatedMemoryHealthCheck(512, "memory", tags: new[] { "system" })
-            .AddProcessHealthCheck("dotnet", "process", tags: new[] { "system" });
+        // Add component health checks
+        services.AddSingleton<BacktesterHealthCheck>();
+        services.AddSingleton<MarketDataHealthCheck>();
+        services.AddSingleton<RiskManagementHealthCheck>();
+        services.AddSingleton<StrategyExecutionHealthCheck>();
 
-        // Add network health checks
-        if (config.HealthChecks.Enabled)
-        {
-            healthChecks.AddPingHealthCheck(options =>
-            {
-                options.AddHost("8.8.8.8", 1000);
-            }, "network", tags: new[] { "network" });
-        }
+        // Add ASP.NET Core health checks
+        services.AddHealthChecks()
+            .AddCheck<BacktesterHealthCheck>("backtester")
+            .AddCheck<MarketDataHealthCheck>("market-data")
+            .AddCheck<RiskManagementHealthCheck>("risk-management")
+            .AddCheck<StrategyExecutionHealthCheck>("strategy-execution");
 
-        // Add health checks UI
+        // Add health check UI
         services.AddHealthChecksUI(setup =>
         {
-            setup.SetEvaluationTimeInSeconds(config.HealthChecks.IntervalSeconds);
-            setup.SetApiMaxActiveRequests(1);
-            setup.AddHealthCheckEndpoint("Trading System", "/health");
-
-            // Configure UI settings
-            setup.SetHeaderText(config.HealthChecks.UI.PageTitle);
-            setup.SetEvaluationTimeInSeconds(config.HealthChecks.IntervalSeconds);
+            setup.SetEvaluationTimeInSeconds(15);
             setup.MaximumHistoryEntriesPerEndpoint(50);
-
-            // Configure UI styling
-            if (!string.IsNullOrEmpty(config.HealthChecks.UI.CustomStylesheetUrl))
-            {
-                setup.AddCustomStylesheet(config.HealthChecks.UI.CustomStylesheetUrl);
-            }
+            setup.SetApiMaxActiveRequests(3);
+            setup.DisableDatabaseMigrations();
         })
         .AddInMemoryStorage();
 
-        // Add monitoring services
-        services.AddSingleton<HealthCheckService>();
-        services.AddSingleton<HealthCheckStorageService>();
-        services.AddSingleton<HealthCheckNotificationService>();
-        services.AddHostedService<MonitoringService>();
-
         // Add Prometheus metrics
-        services.AddSingleton<IMetricFactory>(new MetricFactory());
+        var metricConfig = new PrometheusConfiguration
+        {
+            Enabled = true,
+            PrefixName = "tradingsystem",
+            DefaultLabels = new Dictionary<string, string>
+            {
+                ["app"] = "tradingsystem",
+                ["component"] = "healthcheck"
+            }
+        };
+
+        services.AddSingleton(metricConfig);
+        services.AddSingleton<IMetricFactory>(sp =>
+        {
+            var config = sp.GetRequiredService<PrometheusConfiguration>();
+            var registry = Metrics.NewCustomRegistry();
+            return Metrics.WithCustomRegistry(registry);
+        });
 
         // Add authentication if enabled
+        var config = services.BuildServiceProvider()
+            .GetRequiredService<IOptions<TradingSystem.Core.Configuration.MonitoringConfig>>()
+            .Value;
+
         if (config.HealthChecks.UI.Authentication.Enabled)
         {
-            services.AddHealthCheckAuthorization();
-            services.AddAuthentication()
-                .AddHealthCheckAuth(options =>
-                {
-                    var authConfig = config.HealthChecks.UI.Authentication;
-                    if (authConfig.BasicAuth != null)
-                    {
-                        options.Username = authConfig.BasicAuth.Username;
-                        options.Password = authConfig.BasicAuth.Password;
-                    }
-                });
-        }
+            services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = HealthCheckAuthorizationDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = HealthCheckAuthorizationDefaults.AuthenticationScheme;
+            })
+            .AddHealthCheckAuth();
 
-        // Add caching
-        if (config.HealthChecks.Cache.Enabled)
-        {
-            if (config.HealthChecks.Cache.UseRedis)
+            services.AddAuthorization(options =>
             {
-                services.AddStackExchangeRedisCache(options =>
-                {
-                    options.Configuration = config.HealthChecks.Cache.RedisConnectionString;
-                });
-            }
-            else
-            {
-                services.AddDistributedMemoryCache();
-            }
+                options.AddPolicy(HealthCheckPolicies.ViewHealthChecks, policy =>
+                    policy.RequireAuthenticatedUser());
+                options.AddPolicy(HealthCheckPolicies.TestNotifications, policy =>
+                    policy.RequireRole(HealthCheckAuthorizationDefaults.AdminRole));
+            });
         }
 
         return services;
     }
 
-    public static IApplicationBuilder UseTradingSystemHealthChecks(
-        this IApplicationBuilder app,
-        IOptions<MonitoringConfig> config)
+    public static IApplicationBuilder UseHealthChecking(this IApplicationBuilder app)
     {
-        var monitoringConfig = config.Value;
-
-        // Configure health check middleware pipeline
-        app.UseHealthCheckPipeline();
-
-        // Use health check middleware components
-        if (monitoringConfig.HealthChecks.RateLimit.Enabled)
-        {
-            app.UseHealthCheckRateLimit();
-        }
-
-        if (monitoringConfig.HealthChecks.Cache.Enabled)
-        {
-            app.UseHealthCheckCaching();
-        }
-
-        if (monitoringConfig.HealthChecks.Compression.Enabled)
-        {
-            app.UseHealthCheckCompression();
-        }
-
-        if (monitoringConfig.HealthChecks.Logging.Enabled)
-        {
-            app.UseHealthCheckLogging();
-        }
+        // Add middleware pipeline
+        app.UseMiddleware<HealthCheckMiddleware>();
+        app.UseMiddleware<HealthCheckLoggingMiddleware>();
+        app.UseMiddleware<HealthCheckRateLimitMiddleware>();
+        app.UseMiddleware<HealthCheckCompressionMiddleware>();
+        app.UseMiddleware<HealthCheckCachingMiddleware>();
 
         // Map health check endpoints
-        app.MapHealthChecks("/health", new HealthCheckOptions
+        var endpointRouteBuilder = app as IEndpointRouteBuilder;
+        if (endpointRouteBuilder != null)
         {
-            Predicate = _ => true,
-            ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse,
-            AllowCachingResponses = monitoringConfig.HealthChecks.Cache.Enabled,
-            ResultStatusCodes =
+            endpointRouteBuilder.MapHealthChecks("/health", new HealthCheckOptions
             {
-                [HealthStatus.Healthy] = StatusCodes.Status200OK,
-                [HealthStatus.Degraded] = StatusCodes.Status200OK,
-                [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
-            }
-        });
+                Predicate = _ => true,
+                AllowCachingResponses = false
+            });
 
-        app.MapHealthChecks("/health/ready", new HealthCheckOptions
-        {
-            Predicate = check => check.Tags.Contains("ready"),
-            ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse,
-            AllowCachingResponses = false
-        });
+            endpointRouteBuilder.MapHealthChecks("/health/ready", new HealthCheckOptions
+            {
+                Predicate = check => check.Tags.Contains("ready"),
+                AllowCachingResponses = false
+            });
 
-        app.MapHealthChecks("/health/live", new HealthCheckOptions
-        {
-            Predicate = _ => false,
-            ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse,
-            AllowCachingResponses = false
-        });
+            endpointRouteBuilder.MapHealthChecks("/health/live", new HealthCheckOptions
+            {
+                Predicate = check => !check.Tags.Contains("ready"),
+                AllowCachingResponses = false
+            });
 
-        // Map health check UI
-        app.MapHealthChecksUI(options =>
-        {
-            options.UIPath = monitoringConfig.HealthChecks.UI.Path;
-            options.ApiPath = monitoringConfig.HealthChecks.UI.ApiPath;
-            options.UseRelativeApiPath = true;
-            options.UseRelativeResourcesPath = true;
-            options.AsideMenuOpened = false;
-        });
+            endpointRouteBuilder.MapHealthChecksUI(options =>
+            {
+                options.UIPath = "/health-ui";
+                options.ApiPath = "/health-api";
+            });
+        }
 
         return app;
     }
+}
+
+public class PrometheusConfiguration
+{
+    public bool Enabled { get; set; }
+    public string PrefixName { get; set; } = string.Empty;
+    public Dictionary<string, string> DefaultLabels { get; set; } = new();
+}
+
+public class PrometheusMetricsOptions
+{
+    public string Prefix { get; set; } = string.Empty;
+    public Dictionary<string, string> Labels { get; set; } = new();
 }

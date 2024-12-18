@@ -29,27 +29,8 @@ public class MarketData
     public decimal? RelativeVolume { get; set; }
     public decimal? SpreadPercentage { get; set; }
     public decimal? LiquidityScore { get; set; }
-    public Dictionary<string, decimal> OrderBookLevels { get; set; } = new();
+    public List<OrderBookLevel> OrderBook { get; set; } = new();
     public List<Trade> RecentTrades { get; set; } = new();
-}
-
-public enum MarketCondition
-{
-    Normal,
-    Trending,
-    Ranging,
-    Volatile,
-    Quiet,
-    PreMarket,
-    PostMarket,
-    OpeningRange,
-    ClosingRange,
-    HighVolume,
-    LowVolume,
-    BreakoutAttempt,
-    Support,
-    Resistance,
-    Unknown
 }
 
 public class OrderBookLevel
@@ -59,6 +40,36 @@ public class OrderBookLevel
     public int OrderCount { get; set; }
     public bool IsBid { get; set; }
     public DateTime Timestamp { get; set; }
+
+    public static OrderBookLevel FromPriceSize(decimal price, decimal size, bool isBid)
+    {
+        return new OrderBookLevel
+        {
+            Price = price,
+            Size = size,
+            IsBid = isBid,
+            Timestamp = DateTime.UtcNow,
+            OrderCount = 1 // Default to 1 if not specified
+        };
+    }
+
+    public static List<OrderBookLevel> FromDictionary(Dictionary<string, decimal> levels, bool isBid)
+    {
+        var result = new List<OrderBookLevel>();
+        foreach (var level in levels)
+        {
+            if (decimal.TryParse(level.Key, out var price))
+            {
+                result.Add(FromPriceSize(price, level.Value, isBid));
+            }
+        }
+        return result;
+    }
+
+    public static Dictionary<decimal, decimal> ToDictionary(IEnumerable<OrderBookLevel> levels)
+    {
+        return levels.ToDictionary(l => l.Price, l => l.Size);
+    }
 }
 
 public class RecentTrade

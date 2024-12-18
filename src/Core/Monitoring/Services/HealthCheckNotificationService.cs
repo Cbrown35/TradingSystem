@@ -1,12 +1,13 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TradingSystem.Core.Configuration;
-using TradingSystem.Core.Monitoring.Models;
+using TradingSystem.Core.Monitoring.Interfaces;
 
 namespace TradingSystem.Core.Monitoring.Services;
 
-public class HealthCheckNotificationService
+public class HealthCheckNotificationService : IHealthCheckNotificationService
 {
     private readonly ILogger<HealthCheckNotificationService> _logger;
     private readonly MonitoringConfig _config;
@@ -25,7 +26,7 @@ public class HealthCheckNotificationService
         _lastNotifications = new Dictionary<string, DateTime>();
     }
 
-    public async Task SendNotifications(HealthCheckResult result)
+    public async Task ProcessHealthCheckResultAsync(HealthReport report)
     {
         if (!_config.HealthChecks.Notifications.Enabled)
         {
@@ -34,112 +35,124 @@ public class HealthCheckNotificationService
 
         try
         {
-            foreach (var channel in _config.HealthChecks.Notifications.Channels)
+            foreach (var entry in report.Entries.Where(e => e.Value.Status != HealthStatus.Healthy))
             {
-                if (ShouldSendNotification(channel, result))
+                // Check notification throttling
+                var key = $"{entry.Key}_{entry.Value.Status}";
+                var now = DateTime.UtcNow;
+
+                lock (_lock)
                 {
-                    await SendNotification(channel, result);
+                    if (_lastNotifications.TryGetValue(key, out var lastNotification))
+                    {
+                        var timeSinceLastNotification = now - lastNotification;
+                        if (timeSinceLastNotification.TotalSeconds < _config.HealthChecks.Notifications.MinimumSecondsBetweenNotifications)
+                        {
+                            _logger.LogDebug("Skipping notification for {Component} due to throttling", entry.Key);
+                            continue;
+                        }
+                    }
+                    _lastNotifications[key] = now;
                 }
+
+                await SendNotificationAsync(entry.Key, entry.Value);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending health check notifications");
+            _logger.LogError(ex, "Error processing health check result");
         }
     }
 
-    public async Task SendNotification(NotificationChannelConfig channel, HealthCheckResult result)
+    public async Task SendNotificationAsync(string componentName, HealthReportEntry entry)
     {
         try
         {
-            switch (channel.Type.ToLower())
+            var notificationConfig = _config.HealthChecks.Notifications;
+
+            foreach (var channel in notificationConfig.Channels)
             {
-                case "slack":
-                    await SendSlackNotification(channel, result);
-                    break;
-                case "email":
-                    await SendEmailNotification(channel, result);
-                    break;
-                case "pagerduty":
-                    await SendPagerDutyNotification(channel, result);
-                    break;
-                default:
-                    _logger.LogWarning("Unsupported notification channel type: {Type}", channel.Type);
-                    break;
+                try
+                {
+                    if (!ShouldSendNotification(channel, entry.Status))
+                    {
+                        continue;
+                    }
+
+                    switch (channel.Type.ToLowerInvariant())
+                    {
+                        case "email":
+                            await SendEmailNotificationAsync(componentName, entry, channel);
+                            break;
+                        case "slack":
+                            await SendSlackNotificationAsync(componentName, entry, channel);
+                            break;
+                        case "webhook":
+                            await SendWebhookNotificationAsync(componentName, entry, channel);
+                            break;
+                        default:
+                            _logger.LogWarning("Unknown notification channel type: {Type}", channel.Type);
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending notification through channel {Channel}", channel.Name);
+                }
             }
 
-            UpdateLastNotificationTime(channel.Name);
-            _logger.LogInformation("Sent health check notification via {Channel}", channel.Name);
+            _logger.LogInformation("Sent notifications for component {Component}", componentName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending notification via {Channel}", channel.Name);
-            throw;
+            _logger.LogError(ex, "Error sending notifications for component {Component}", componentName);
         }
     }
 
-    private bool ShouldSendNotification(NotificationChannelConfig channel, HealthCheckResult result)
+    private bool ShouldSendNotification(NotificationChannelConfig channel, HealthStatus status)
     {
-        // Check if enough time has passed since last notification
-        if (!HasEnoughTimePassed(channel.Name))
+        // Check tag filters
+        if (channel.Filter.IncludeTags.Any())
         {
+            // TODO: Implement tag-based filtering
             return false;
         }
 
-        // Check if result status meets minimum severity
-        if (!MeetsMinimumSeverity(channel.Filter.MinimumStatus, result.Status.ToString()))
+        // Check status filters
+        if (channel.Filter.MinimumStatus.Any())
         {
-            return false;
+            var statusHierarchy = new[] { "Healthy", "Degraded", "Unhealthy" };
+            var minimumIndex = statusHierarchy.ToList().IndexOf(channel.Filter.MinimumStatus.First());
+            var currentIndex = statusHierarchy.ToList().IndexOf(status.ToString());
+
+            return currentIndex >= minimumIndex;
         }
 
-        // Check if any failing checks match included tags
-        var failingEntries = result.Entries
-            .Where(e => e.Value.Status != HealthStatus.Healthy)
-            .Select(e => e.Key);
-
-        return channel.Filter.IncludeTags.Any(tag => failingEntries.Contains(tag));
+        return true;
     }
 
-    private bool HasEnoughTimePassed(string channelName)
+    private async Task SendEmailNotificationAsync(string componentName, HealthReportEntry entry, NotificationChannelConfig channel)
     {
-        lock (_lock)
+        if (!channel.Settings.TryGetValue("SmtpServer", out var smtpServer) || string.IsNullOrEmpty(smtpServer))
         {
-            if (!_lastNotifications.TryGetValue(channelName, out var lastNotification))
-            {
-                return true;
-            }
-
-            var minimumInterval = TimeSpan.FromSeconds(
-                _config.HealthChecks.Notifications.MinimumSecondsBetweenNotifications);
-            return DateTime.UtcNow - lastNotification > minimumInterval;
-        }
-    }
-
-    private void UpdateLastNotificationTime(string channelName)
-    {
-        lock (_lock)
-        {
-            _lastNotifications[channelName] = DateTime.UtcNow;
-        }
-    }
-
-    private bool MeetsMinimumSeverity(List<string> minimumStatus, string actualStatus)
-    {
-        if (!minimumStatus.Any())
-        {
-            return true;
+            throw new InvalidOperationException("SMTP server not configured");
         }
 
-        return minimumStatus.Contains(actualStatus, StringComparer.OrdinalIgnoreCase);
+        // TODO: Implement email notification logic
+        await Task.CompletedTask;
     }
 
-    private async Task SendSlackNotification(NotificationChannelConfig channel, HealthCheckResult result)
+    private async Task SendSlackNotificationAsync(string componentName, HealthReportEntry entry, NotificationChannelConfig channel)
     {
-        var webhookUrl = channel.Settings["WebhookUrl"];
+        if (!channel.Settings.TryGetValue("WebhookUrl", out var webhookUrl) || string.IsNullOrEmpty(webhookUrl))
+        {
+            throw new InvalidOperationException("Slack webhook URL not configured");
+        }
+
         var payload = new
         {
-            text = FormatSlackMessage(result),
-            channel = channel.Settings.GetValueOrDefault("Channel", "#alerts"),
+            text = FormatSlackMessage(componentName, entry),
+            channel = channel.Settings.GetValueOrDefault("Channel", "#monitoring"),
             username = channel.Settings.GetValueOrDefault("Username", "Health Check Monitor")
         };
 
@@ -148,70 +161,59 @@ public class HealthCheckNotificationService
         response.EnsureSuccessStatusCode();
     }
 
-    private async Task SendEmailNotification(NotificationChannelConfig channel, HealthCheckResult result)
+    private async Task SendWebhookNotificationAsync(string componentName, HealthReportEntry entry, NotificationChannelConfig channel)
     {
-        // Implement email notification logic
-        await Task.CompletedTask;
-    }
+        if (!channel.Settings.TryGetValue("Url", out var webhookUrl) || string.IsNullOrEmpty(webhookUrl))
+        {
+            throw new InvalidOperationException("Webhook URL not configured");
+        }
 
-    private async Task SendPagerDutyNotification(NotificationChannelConfig channel, HealthCheckResult result)
-    {
-        var serviceKey = channel.Settings["ServiceKey"];
         var payload = new
         {
-            routing_key = serviceKey,
-            event_action = "trigger",
-            payload = new
-            {
-                summary = FormatPagerDutySummary(result),
-                source = "TradingSystem",
-                severity = MapStatusToPagerDutySeverity(result.Status.ToString()),
-                timestamp = DateTime.UtcNow.ToString("O"),
-                custom_details = result.Entries
-                    .Where(e => e.Value.Status != HealthStatus.Healthy)
-                    .ToDictionary(e => e.Key, e => e.Value.Description ?? "No description")
-            }
+            component = componentName,
+            status = entry.Status.ToString(),
+            description = entry.Description,
+            timestamp = DateTime.UtcNow,
+            data = entry.Data
         };
 
         using var client = _httpClientFactory.CreateClient();
-        var response = await client.PostAsJsonAsync(
-            "https://events.pagerduty.com/v2/enqueue",
-            payload);
+        
+        if (channel.Settings.TryGetValue("AuthToken", out var authToken) && !string.IsNullOrEmpty(authToken))
+        {
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {authToken}");
+        }
+
+        var response = await client.PostAsJsonAsync(webhookUrl, payload);
         response.EnsureSuccessStatusCode();
     }
 
-    private string FormatSlackMessage(HealthCheckResult result)
+    private string FormatSlackMessage(string componentName, HealthReportEntry entry)
     {
-        var status = result.Status == HealthStatus.Healthy ? ":white_check_mark:" : ":x:";
-        var message = $"{status} Health Check Status: *{result.Status}*\n";
+        var status = entry.Status == HealthStatus.Healthy ? ":white_check_mark:" : ":x:";
+        var message = $"{status} Health Check Alert: *{componentName}*\n";
+        message += $"Status: *{entry.Status}*\n";
         message += $"Time: {DateTime.UtcNow:u}\n";
 
-        foreach (var entry in result.Entries.Where(e => e.Value.Status != HealthStatus.Healthy))
+        if (!string.IsNullOrEmpty(entry.Description))
         {
-            message += $"• {entry.Key}: {entry.Value.Status}\n";
-            if (!string.IsNullOrEmpty(entry.Value.Description))
+            message += $"Description: {entry.Description}\n";
+        }
+
+        if (entry.Exception != null)
+        {
+            message += $"Error: {entry.Exception.Message}\n";
+        }
+
+        if (entry.Data.Any())
+        {
+            message += "Additional Data:\n";
+            foreach (var (key, value) in entry.Data)
             {
-                message += $"  {entry.Value.Description}\n";
+                message += $"• {key}: {value}\n";
             }
         }
 
         return message;
-    }
-
-    private string FormatPagerDutySummary(HealthCheckResult result)
-    {
-        var failedChecks = result.Entries
-            .Count(e => e.Value.Status != HealthStatus.Healthy);
-        return $"Health Check Alert: {failedChecks} checks failing";
-    }
-
-    private string MapStatusToPagerDutySeverity(string status)
-    {
-        return status.ToLower() switch
-        {
-            "unhealthy" => "critical",
-            "degraded" => "warning",
-            _ => "info"
-        };
     }
 }

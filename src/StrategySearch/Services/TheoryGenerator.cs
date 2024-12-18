@@ -136,21 +136,61 @@ public class TheoryGenerator : ITheoryGenerator
 
     private Signal GenerateSignal(string name, List<Indicator> indicators)
     {
-        var signal = new Signal { Name = name };
+        var signal = new Signal 
+        { 
+            Name = name,
+            Id = Guid.NewGuid().ToString(),
+            Type = name == "Entry" ? SignalType.Entry : SignalType.Exit,
+            Strength = SignalStrength.Medium,
+            Timestamp = DateTime.UtcNow
+        };
+
         var numConditions = _random.Next(1, 3);
 
         for (int i = 0; i < numConditions; i++)
         {
-            var condition = new Condition
+            var leftOperand = GetRandomIndicatorReference(indicators);
+            var rightOperand = GetRandomIndicatorReference(indicators);
+            var conditionType = GetRandomSignalConditionType();
+
+            var signalCondition = new SignalCondition
             {
-                Type = (ConditionType)_random.Next(Enum.GetValues(typeof(ConditionType)).Length),
-                LeftOperand = GetRandomIndicatorReference(indicators),
-                RightOperand = GetRandomIndicatorReference(indicators)
+                Type = conditionType,
+                Expression = $"{leftOperand} {GetOperatorString(conditionType)} {rightOperand}",
+                Parameters = new Dictionary<string, decimal>()
             };
-            signal.Conditions.Add(condition);
+
+            signal.Conditions.Add(signalCondition);
         }
 
+        // Build the complete expression from all conditions
+        signal.Expression = string.Join(" AND ", signal.Conditions.Select(c => c.Expression));
+
         return signal;
+    }
+
+    private SignalConditionType GetRandomSignalConditionType()
+    {
+        var types = new[]
+        {
+            SignalConditionType.PriceAbove,
+            SignalConditionType.PriceBelow,
+            SignalConditionType.CrossOver,
+            SignalConditionType.CrossUnder
+        };
+        return types[_random.Next(types.Length)];
+    }
+
+    private string GetOperatorString(SignalConditionType type)
+    {
+        return type switch
+        {
+            SignalConditionType.PriceAbove => ">",
+            SignalConditionType.PriceBelow => "<",
+            SignalConditionType.CrossOver => "crosses above",
+            SignalConditionType.CrossUnder => "crosses below",
+            _ => "=="
+        };
     }
 
     private string GetRandomIndicatorReference(List<Indicator> indicators)

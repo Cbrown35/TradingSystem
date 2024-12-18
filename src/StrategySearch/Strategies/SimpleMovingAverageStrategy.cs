@@ -7,13 +7,16 @@ public class SimpleMovingAverageStrategy : ITradingStrategy
 {
     private int _fastPeriod;
     private int _slowPeriod;
+    private readonly string _id;
 
+    public string Id => _id;
     public string Name => "Simple Moving Average Crossover";
 
     public SimpleMovingAverageStrategy(int fastPeriod = 10, int slowPeriod = 20)
     {
         _fastPeriod = fastPeriod;
         _slowPeriod = slowPeriod;
+        _id = $"SMA_{fastPeriod}_{slowPeriod}_{Guid.NewGuid():N}";
     }
 
     public async Task<bool?> ShouldEnter(List<MarketData> historicalData)

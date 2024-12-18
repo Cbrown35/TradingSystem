@@ -1,13 +1,15 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using TradingSystem.Core.Configuration;
-using TradingSystem.Core.Interfaces;
+using TradingSystem.Common.Interfaces;
+using TradingSystem.Common.Models;
 using TradingSystem.Core.Services;
 using TradingSystem.Infrastructure.Data;
 using TradingSystem.Infrastructure.Repositories;
 using TradingSystem.RealTrading.Services;
+using TradingSystem.RealTrading.Configuration;
 using TradingSystem.StrategySearch.Services;
-using TradingSystem.StrategySearch.Models;
 
 namespace TradingSystem.Console.Services;
 
@@ -18,30 +20,65 @@ public class TradingSystemFactory
         var services = new ServiceCollection();
         var config = EnvironmentConfigFactory.CreateConfig(environment);
 
+        // Add logging
+        services.AddLogging(builder =>
+        {
+            builder.AddConsole();
+            builder.SetMinimumLevel(LogLevel.Information);
+        });
+
         // Register configuration
         services.AddSingleton(config);
 
         // Register database context
         services.AddDbContext<TradingContext>(options =>
-            options.UseSqlServer(config.Database.ConnectionString));
+        {
+            options.UseNpgsql(config.Database.ConnectionString);
+        });
 
         // Register repositories
         services.AddScoped<ITradeRepository, TradeRepository>();
+
+        // Register validation service
+        services.AddSingleton<IRiskValidationService, RiskValidationService>();
 
         // Register exchange adapter based on environment
         services.AddSingleton<IExchangeAdapter>(provider =>
         {
             if (config.Environment == TradingEnvironment.Test)
             {
-                return new SimulatedExchangeAdapter();
+                return new SimulatedExchangeAdapter(
+                    provider.GetRequiredService<ILogger<SimulatedExchangeAdapter>>());
             }
             else
             {
-                var tradovateAdapter = new TradovateAdapter(config.Tradovate);
+                var tradovateConfig = new RealTrading.Models.TradovateConfig
+                {
+                    ApiKey = config.Tradovate.AppId,
+                    ApiSecret = config.Tradovate.Password,
+                    AccountId = config.Tradovate.CustomerId,
+                    RestApiUrl = config.Tradovate.BaseUrl,
+                    WebSocketUrl = config.Tradovate.BaseUrl.Replace("http", "ws"),
+                    UseDemoAccount = config.Tradovate.IsPaperTrading
+                };
+
+                var tradovateAdapter = new TradovateAdapter(
+                    tradovateConfig,
+                    provider.GetRequiredService<ILogger<TradovateAdapter>>());
+
                 if (config.Environment == TradingEnvironment.Development)
                 {
                     // Wrap with TradingView adapter in dev for testing webhooks
-                    return new TradingViewAdapter(config.TradingView, tradovateAdapter);
+                    var tradingViewConfig = new RealTrading.Models.TradingViewConfig
+                    {
+                        WebhookPort = config.TradingView.WebhookPort,
+                        WebhookEndpoint = config.TradingView.WebhookUrl,
+                        AllowedIps = Array.Empty<string>() // Allow all IPs in dev
+                    };
+
+                    return new TradingViewAdapter(
+                        tradingViewConfig,
+                        provider.GetRequiredService<ILogger<TradingViewAdapter>>());
                 }
                 return tradovateAdapter;
             }
@@ -53,20 +90,38 @@ public class TradingSystemFactory
         // Register risk manager with environment-specific settings
         services.AddSingleton<IRiskManager>(provider =>
         {
-            var riskParams = new RiskParameters
+            var riskMetrics = new RiskMetrics
+            {
+                RiskParameters = new Dictionary<string, decimal>
+                {
+                    ["MaxPositionSize"] = config.Risk.MaxPositionSize,
+                    ["StopLossPercent"] = config.Risk.StopLossPercent,
+                    ["MaxDrawdown"] = config.Risk.MaxDrawdown,
+                    ["MaxDailyLoss"] = config.Risk.MaxDailyLoss,
+                    ["MaxOpenPositions"] = config.Risk.MaxOpenPositions,
+                    ["TakeProfitPercent"] = config.Risk.MaxPositionSize * 2 // Example: 2:1 reward/risk ratio
+                }
+            };
+
+            var riskManagerConfig = new RiskManagerConfig
             {
                 MaxPositionSize = config.Risk.MaxPositionSize,
-                StopLossPercent = config.Risk.StopLossPercent,
+                DefaultStopLossPercent = config.Risk.StopLossPercent,
                 MaxDrawdown = config.Risk.MaxDrawdown,
-                MaxDailyLoss = config.Risk.MaxDailyLoss,
-                MaxOpenPositions = config.Risk.MaxOpenPositions,
-                TakeProfitPercent = config.Risk.MaxPositionSize * 2 // Example: 2:1 reward/risk ratio
+                MaxRiskPerTrade = config.Risk.MaxDailyLoss,
+                MaxPortfolioRisk = config.Risk.MaxPositionSize,
+                MinPositionSize = 0.001m, // Default value
+                DefaultTakeProfitPercent = config.Risk.MaxPositionSize * 2,
+                MinRiskRewardRatio = 1.5m, // Default value
+                MaxLeverage = 3m, // Default value
+                InitialAccountEquity = 10000m // Default value
             };
 
             return new RiskManager(
-                provider.GetRequiredService<IExchangeAdapter>(),
                 provider.GetRequiredService<ITradeRepository>(),
-                riskParams);
+                provider.GetRequiredService<IRiskValidationService>(),
+                Microsoft.Extensions.Options.Options.Create(riskManagerConfig),
+                provider.GetRequiredService<ILogger<RiskManager>>());
         });
 
         // Register strategy search components

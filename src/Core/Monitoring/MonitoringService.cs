@@ -1,5 +1,10 @@
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TradingSystem.Core.Configuration;
+using TradingSystem.Core.Monitoring.Interfaces;
+using TradingSystem.Core.Monitoring.Models;
 using TradingSystem.Core.Monitoring.Services;
 
 namespace TradingSystem.Core.Monitoring;
@@ -7,16 +12,16 @@ namespace TradingSystem.Core.Monitoring;
 public class MonitoringService : IHostedService, IDisposable
 {
     private readonly ILogger<MonitoringService> _logger;
-    private readonly MonitoringConfig _config;
-    private readonly HealthCheckService _healthCheckService;
+    private readonly TradingSystem.Core.Configuration.MonitoringConfig _config;
+    private readonly IHealthCheckService _healthCheckService;
     private readonly HealthCheckStorageService _storageService;
     private readonly HealthCheckNotificationService _notificationService;
     private Timer? _monitoringTimer;
 
     public MonitoringService(
         ILogger<MonitoringService> logger,
-        IOptions<MonitoringConfig> config,
-        HealthCheckService healthCheckService,
+        IOptions<TradingSystem.Core.Configuration.MonitoringConfig> config,
+        IHealthCheckService healthCheckService,
         HealthCheckStorageService storageService,
         HealthCheckNotificationService notificationService)
     {
@@ -52,38 +57,15 @@ public class MonitoringService : IHostedService, IDisposable
     {
         try
         {
-            var context = new HealthCheckContext();
-            var result = await _healthCheckService.CheckHealthAsync(context);
+            var result = await _healthCheckService.CheckHealthAsync();
 
             // Store the result
-            await _storageService.StoreResult("system", new HealthCheckResult
-            {
-                Status = result.Status.ToString(),
-                Duration = TimeSpan.Zero, // Set actual duration
-                Timestamp = DateTime.UtcNow,
-                Entries = result.Data.Select(d => new HealthCheckEntry
-                {
-                    Name = d.Key,
-                    Status = "Healthy", // Set actual status
-                    Description = d.Value?.ToString() ?? string.Empty
-                }).ToList()
-            });
+            await _storageService.StoreHealthCheckResultAsync(result);
 
             // Send notifications if needed
-            if (result.Status != HealthStatus.Healthy)
+            if (result.Status != Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy)
             {
-                await _notificationService.SendNotifications(new HealthCheckResult
-                {
-                    Status = result.Status.ToString(),
-                    Duration = TimeSpan.Zero, // Set actual duration
-                    Timestamp = DateTime.UtcNow,
-                    Entries = result.Data.Select(d => new HealthCheckEntry
-                    {
-                        Name = d.Key,
-                        Status = "Healthy", // Set actual status
-                        Description = d.Value?.ToString() ?? string.Empty
-                    }).ToList()
-                });
+                await _notificationService.ProcessHealthCheckResultAsync(result);
             }
         }
         catch (Exception ex)

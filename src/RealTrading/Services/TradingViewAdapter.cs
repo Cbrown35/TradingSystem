@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using TradingSystem.Common.Interfaces;
 using TradingSystem.Common.Models;
@@ -11,16 +12,20 @@ namespace TradingSystem.RealTrading.Services;
 public class TradingViewAdapter : IExchangeAdapter, IDisposable
 {
     private readonly TradingViewConfig _config;
+    private readonly ILogger<TradingViewAdapter> _logger;
     private readonly IWebHost _webhookServer;
     private readonly Dictionary<string, decimal> _lastPrices;
     private readonly Dictionary<string, List<Trade>> _openOrders;
+    private readonly Dictionary<string, List<OrderBookLevel>> _orderBooks;
     private decimal _accountBalance = 10000m; // Starting with 10k USDT for demo
 
-    public TradingViewAdapter(TradingViewConfig config)
+    public TradingViewAdapter(TradingViewConfig config, ILogger<TradingViewAdapter> logger)
     {
         _config = config;
+        _logger = logger;
         _lastPrices = new Dictionary<string, decimal>();
         _openOrders = new Dictionary<string, List<Trade>>();
+        _orderBooks = new Dictionary<string, List<OrderBookLevel>>();
 
         // Set up webhook server
         _webhookServer = new WebHostBuilder()
@@ -42,6 +47,7 @@ public class TradingViewAdapter : IExchangeAdapter, IDisposable
             .Build();
 
         _webhookServer.Start();
+        _logger.LogInformation("TradingView webhook server started on port {Port}", _config.WebhookPort);
     }
 
     public Task<decimal> GetAccountBalance(string asset)
@@ -62,12 +68,18 @@ public class TradingViewAdapter : IExchangeAdapter, IDisposable
             Symbol = symbol,
             EntryPrice = price,
             Quantity = quantity,
+            Direction = isLong ? TradeDirection.Long : TradeDirection.Short,
+            Status = TradeStatus.Open,
             OpenTime = DateTime.UtcNow,
-            Status = TradeStatus.Open
+            StopLoss = price * (isLong ? 0.98m : 1.02m),
+            TakeProfit = price * (isLong ? 1.04m : 0.96m)
         };
 
         _openOrders[symbol].Add(trade);
         _accountBalance -= quantity * price;
+
+        _logger.LogInformation("Placed {Direction} order for {Symbol}: {Quantity} @ {Price}",
+            isLong ? "LONG" : "SHORT", symbol, quantity, price);
 
         return trade;
     }
@@ -81,10 +93,12 @@ public class TradingViewAdapter : IExchangeAdapter, IDisposable
             {
                 order.Status = TradeStatus.Closed;
                 order.CloseTime = DateTime.UtcNow;
-                var closePrice = await GetMarketPrice(order.Symbol);
+                var closePrice = GetCurrentPrice(order.Symbol);
                 order.RealizedPnL = (closePrice - order.EntryPrice) * order.Quantity;
-                _accountBalance += order.RealizedPnL;
+                _accountBalance += order.RealizedPnL ?? 0;
                 orders.Remove(order);
+
+                _logger.LogInformation("Closed order {OrderId} with PnL: {PnL}", orderId, order.RealizedPnL);
                 return order;
             }
         }
@@ -92,25 +106,24 @@ public class TradingViewAdapter : IExchangeAdapter, IDisposable
         throw new InvalidOperationException($"Order {orderId} not found");
     }
 
-    public Task<List<Trade>> GetOpenOrders()
+    public List<Trade> GetOpenOrders()
     {
-        var allOrders = _openOrders.Values.SelectMany(x => x).ToList();
-        return Task.FromResult(allOrders);
+        return _openOrders.Values.SelectMany(x => x).ToList();
     }
 
-    public Task CancelAllOrders(string symbol)
+    public void CancelAllOrders(string symbol)
     {
         if (_openOrders.ContainsKey(symbol))
         {
             _openOrders[symbol].Clear();
+            _logger.LogInformation("Cancelled all orders for {Symbol}", symbol);
         }
-        return Task.CompletedTask;
     }
 
-    public async Task<MarketData> GetMarketData(string symbol)
+    public Task<MarketData> GetMarketData(string symbol)
     {
-        var price = await GetMarketPrice(symbol);
-        return new MarketData
+        var price = GetCurrentPrice(symbol);
+        return Task.FromResult(new MarketData
         {
             Symbol = symbol,
             Timestamp = DateTime.UtcNow,
@@ -118,11 +131,86 @@ public class TradingViewAdapter : IExchangeAdapter, IDisposable
             High = price * 1.001m,
             Low = price * 0.999m,
             Close = price,
-            Volume = 1000m
-        };
+            Volume = 1000m,
+            BidPrice = price * 0.9995m,
+            AskPrice = price * 1.0005m,
+            NumberOfTrades = 100
+        });
     }
 
-    private async Task<decimal> GetMarketPrice(string symbol)
+    public IEnumerable<string> GetActiveSymbols()
+    {
+        return _lastPrices.Keys;
+    }
+
+    public Task<MarketData?> GetLatestPrice(string symbol)
+    {
+        return GetMarketData(symbol);
+    }
+
+    public Task<IEnumerable<MarketData>> GetHistoricalData(string symbol, DateTime startTime, DateTime endTime, TimeFrame timeFrame)
+    {
+        // For demo purposes, generate some historical data
+        var data = new List<MarketData>();
+        var currentPrice = GetCurrentPrice(symbol);
+        var currentTime = startTime;
+
+        while (currentTime <= endTime)
+        {
+            var random = new Random();
+            var change = (decimal)(random.NextDouble() * 0.02 - 0.01);
+            currentPrice *= (1 + change);
+
+            data.Add(new MarketData
+            {
+                Symbol = symbol,
+                Timestamp = currentTime,
+                Open = currentPrice,
+                High = currentPrice * 1.005m,
+                Low = currentPrice * 0.995m,
+                Close = currentPrice,
+                Volume = random.Next(100, 1000),
+                NumberOfTrades = random.Next(10, 100)
+            });
+
+            currentTime = timeFrame switch
+            {
+                TimeFrame.Minute => currentTime.AddMinutes(1),
+                TimeFrame.Hour => currentTime.AddHours(1),
+                TimeFrame.Day => currentTime.AddDays(1),
+                TimeFrame.Week => currentTime.AddDays(7),
+                TimeFrame.Month => currentTime.AddMonths(1),
+                _ => currentTime.AddMinutes(1)
+            };
+        }
+
+        return Task.FromResult<IEnumerable<MarketData>>(data);
+    }
+
+    public void SubscribeToSymbol(string symbol)
+    {
+        if (!_lastPrices.ContainsKey(symbol))
+        {
+            _lastPrices[symbol] = 100m; // Default starting price
+        }
+        _logger.LogInformation("Subscribed to {Symbol}", symbol);
+    }
+
+    public void UnsubscribeFromSymbol(string symbol)
+    {
+        _logger.LogInformation("Unsubscribed from {Symbol}", symbol);
+    }
+
+    public OrderBookLevel[] GetOrderBook(string symbol)
+    {
+        if (!_orderBooks.ContainsKey(symbol))
+        {
+            GenerateOrderBook(symbol);
+        }
+        return _orderBooks[symbol].ToArray();
+    }
+
+    private decimal GetCurrentPrice(string symbol)
     {
         if (!_lastPrices.ContainsKey(symbol))
         {
@@ -137,6 +225,41 @@ public class TradingViewAdapter : IExchangeAdapter, IDisposable
         return _lastPrices[symbol];
     }
 
+    private void GenerateOrderBook(string symbol)
+    {
+        var orderBook = new List<OrderBookLevel>();
+        var basePrice = GetCurrentPrice(symbol);
+        var now = DateTime.UtcNow;
+
+        // Generate bid levels
+        for (int i = 1; i <= 10; i++)
+        {
+            orderBook.Add(new OrderBookLevel
+            {
+                Price = basePrice * (1 - i * 0.001m),
+                Size = new Random().Next(1, 10),
+                OrderCount = new Random().Next(1, 5),
+                IsBid = true,
+                Timestamp = now
+            });
+        }
+
+        // Generate ask levels
+        for (int i = 1; i <= 10; i++)
+        {
+            orderBook.Add(new OrderBookLevel
+            {
+                Price = basePrice * (1 + i * 0.001m),
+                Size = new Random().Next(1, 10),
+                OrderCount = new Random().Next(1, 5),
+                IsBid = false,
+                Timestamp = now
+            });
+        }
+
+        _orderBooks[symbol] = orderBook;
+    }
+
     private async Task HandleWebhook(string json)
     {
         try
@@ -145,16 +268,18 @@ public class TradingViewAdapter : IExchangeAdapter, IDisposable
             var symbol = (string)data.symbol;
             var price = (decimal)data.price;
             _lastPrices[symbol] = price;
+
+            _logger.LogDebug("Received webhook update for {Symbol}: {Price}", symbol, price);
         }
         catch (Exception ex)
         {
-            // Log error
-            Console.WriteLine($"Error handling webhook: {ex.Message}");
+            _logger.LogError(ex, "Error handling webhook");
         }
     }
 
     public void Dispose()
     {
         _webhookServer?.Dispose();
+        _logger.LogInformation("TradingView webhook server stopped");
     }
 }

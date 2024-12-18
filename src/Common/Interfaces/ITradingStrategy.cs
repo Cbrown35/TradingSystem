@@ -4,6 +4,7 @@ namespace TradingSystem.Common.Interfaces;
 
 public interface ITradingStrategy
 {
+    string Id { get; }
     string Name { get; }
     Task<bool?> ShouldEnter(List<MarketData> marketData);
     Task<bool?> ShouldExit(List<MarketData> marketData);

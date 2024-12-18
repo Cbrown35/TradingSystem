@@ -1,5 +1,6 @@
 using TradingSystem.Common.Interfaces;
 using TradingSystem.Common.Models;
+using TradingSystem.StrategySearch.Strategies;
 
 namespace TradingSystem.StrategySearch.Services;
 
@@ -30,7 +31,8 @@ public class StrategyOptimizer : IStrategyOptimizer
             // Evaluate fitness for each theory
             foreach (var theory in population)
             {
-                var result = await _backtester.RunBacktest(theory, startDate, endDate);
+                var strategy = new TheoryBasedStrategy(theory);
+                var result = await _backtester.RunBacktestAsync(strategy, theory.Symbols.First(), startDate, endDate);
                 var fitness = CalculateFitness(result);
                 fitnessScores[theory] = fitness;
 
@@ -69,7 +71,8 @@ public class StrategyOptimizer : IStrategyOptimizer
             population = nextGeneration.Take(PopulationSize).ToList();
         }
 
-        var finalResult = await _backtester.RunBacktest(bestTheory, startDate, endDate);
+        var finalStrategy = new TheoryBasedStrategy(bestTheory);
+        var finalResult = await _backtester.RunBacktestAsync(finalStrategy, bestTheory.Symbols.First(), startDate, endDate);
 
         return new OptimizationResult
         {
@@ -93,7 +96,8 @@ public class StrategyOptimizer : IStrategyOptimizer
             // Evaluate fitness for each theory
             foreach (var candidate in population)
             {
-                var result = await _backtester.RunBacktest(candidate, settings.StartDate, settings.EndDate);
+                var strategy = new TheoryBasedStrategy(candidate);
+                var result = await _backtester.RunBacktestAsync(strategy, candidate.Symbols.First(), settings.StartDate, settings.EndDate);
                 var fitness = CalculateFitness(result);
                 fitnessScores[candidate] = fitness;
 

@@ -82,7 +82,7 @@ public class TradingContext : DbContext
 
             entity.Property(e => e.Indicators).HasColumnType("jsonb");
             entity.Property(e => e.CustomMetrics).HasColumnType("jsonb");
-            entity.Property(e => e.OrderBookLevels).HasColumnType("jsonb");
+            entity.Property(e => e.OrderBook).HasColumnType("jsonb");
             entity.Property(e => e.RecentTrades).HasColumnType("jsonb");
 
             entity.HasIndex(e => new { e.Symbol, e.Timestamp });

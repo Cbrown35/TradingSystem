@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TradingSystem.Core.Configuration;
 
@@ -29,11 +30,11 @@ public class HealthCheckAuthHandler : AuthenticationHandler<AuthenticationScheme
 
             if (!authConfig.Enabled)
             {
-                var claims = new[] { new Claim(ClaimTypes.Name, "anonymous") };
-                var identity = new ClaimsIdentity(claims, Scheme.Name);
-                var principal = new ClaimsPrincipal(identity);
-                var ticket = new AuthenticationTicket(principal, Scheme.Name);
-                return Task.FromResult(AuthenticateResult.Success(ticket));
+                var anonymousClaims = new[] { new Claim(ClaimTypes.Name, "anonymous") };
+                var anonymousIdentity = new ClaimsIdentity(anonymousClaims, Scheme.Name);
+                var anonymousPrincipal = new ClaimsPrincipal(anonymousIdentity);
+                var anonymousTicket = new AuthenticationTicket(anonymousPrincipal, Scheme.Name);
+                return Task.FromResult(AuthenticateResult.Success(anonymousTicket));
             }
 
             if (authConfig.Provider?.ToLower() != "basic")
@@ -43,7 +44,7 @@ public class HealthCheckAuthHandler : AuthenticationHandler<AuthenticationScheme
 
             if (!Request.Headers.ContainsKey("Authorization"))
             {
-                Response.Headers.Add("WWW-Authenticate", "Basic");
+                Response.Headers["WWW-Authenticate"] = "Basic";
                 return Task.FromResult(AuthenticateResult.Fail("Missing authorization header"));
             }
 
@@ -71,17 +72,17 @@ public class HealthCheckAuthHandler : AuthenticationHandler<AuthenticationScheme
                 return Task.FromResult(AuthenticateResult.Fail("Invalid credentials"));
             }
 
-            var claims = new[]
+            var authClaims = new[]
             {
                 new Claim(ClaimTypes.Name, username),
-                new Claim(ClaimTypes.Role, "HealthCheckAdmin")
+                new Claim(ClaimTypes.Role, HealthCheckAuthorizationDefaults.AdminRole)
             };
 
-            var identity = new ClaimsIdentity(claims, Scheme.Name);
-            var principal = new ClaimsPrincipal(identity);
-            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+            var authIdentity = new ClaimsIdentity(authClaims, Scheme.Name);
+            var authPrincipal = new ClaimsPrincipal(authIdentity);
+            var authTicket = new AuthenticationTicket(authPrincipal, Scheme.Name);
 
-            return Task.FromResult(AuthenticateResult.Success(ticket));
+            return Task.FromResult(AuthenticateResult.Success(authTicket));
         }
         catch (Exception ex)
         {
@@ -96,41 +97,6 @@ public static class HealthCheckAuthExtensions
     public static AuthenticationBuilder AddHealthCheckAuth(this AuthenticationBuilder builder)
     {
         return builder.AddScheme<AuthenticationSchemeOptions, HealthCheckAuthHandler>(
-            "HealthCheckAuth", null);
+            HealthCheckAuthorizationDefaults.AuthenticationScheme, null);
     }
-}
-
-public static class HealthCheckPolicies
-{
-    public const string ViewHealthChecks = "ViewHealthChecks";
-    public const string ManageHealthChecks = "ManageHealthChecks";
-    public const string TestNotifications = "TestNotifications";
-}
-
-public static class HealthCheckAuthorizationExtensions
-{
-    public static IServiceCollection AddHealthCheckAuthorization(this IServiceCollection services)
-    {
-        services.AddAuthorization(options =>
-        {
-            options.AddPolicy(HealthCheckPolicies.ViewHealthChecks, policy =>
-                policy.RequireAuthenticatedUser());
-
-            options.AddPolicy(HealthCheckPolicies.ManageHealthChecks, policy =>
-                policy.RequireRole("HealthCheckAdmin"));
-
-            options.AddPolicy(HealthCheckPolicies.TestNotifications, policy =>
-                policy.RequireRole("HealthCheckAdmin"));
-        });
-
-        return services;
-    }
-}
-
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-public class HealthCheckAuthAttribute : Attribute, Microsoft.AspNetCore.Authorization.IAuthorizeData
-{
-    public string? AuthenticationSchemes { get; set; } = "HealthCheckAuth";
-    public string? Policy { get; set; }
-    public string? Roles { get; set; }
 }

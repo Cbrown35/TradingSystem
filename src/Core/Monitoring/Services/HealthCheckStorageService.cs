@@ -8,35 +8,37 @@ using TradingSystem.Core.Monitoring.Models;
 
 namespace TradingSystem.Core.Monitoring.Services;
 
-public class HealthCheckStorageService
+public class HealthCheckStorageService : IHealthCheckStorageService
 {
     private readonly ILogger<HealthCheckStorageService> _logger;
-    private readonly MonitoringConfig _config;
+    private readonly TradingSystem.Core.Configuration.MonitoringConfig _config;
     private readonly IMemoryCache _cache;
-    private readonly ConcurrentDictionary<string, List<HealthCheckResult>> _history;
+    private readonly ConcurrentDictionary<string, List<HealthReport>> _history;
+    private readonly TimeSpan _retentionPeriod = TimeSpan.FromDays(7);
 
     public HealthCheckStorageService(
         ILogger<HealthCheckStorageService> logger,
-        IOptions<MonitoringConfig> config,
+        IOptions<TradingSystem.Core.Configuration.MonitoringConfig> config,
         IMemoryCache cache)
     {
         _logger = logger;
         _config = config.Value;
         _cache = cache;
-        _history = new ConcurrentDictionary<string, List<HealthCheckResult>>();
+        _history = new ConcurrentDictionary<string, List<HealthReport>>();
     }
 
-    public async Task StoreResult(string endpoint, HealthCheckResult result)
+    public async Task StoreHealthCheckResultAsync(HealthReport result)
     {
         try
         {
-            var history = _history.GetOrAdd(endpoint, _ => new List<HealthCheckResult>());
+            var key = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            var history = _history.GetOrAdd(key, _ => new List<HealthReport>());
 
             lock (history)
             {
                 history.Add(result);
 
-                // Keep only the last N entries
+                // Keep only the last N entries per day
                 var maxEntries = _config.HealthChecks.UI.ShowDetailedErrors ? 100 : 50;
                 while (history.Count > maxEntries)
                 {
@@ -46,135 +48,137 @@ public class HealthCheckStorageService
 
             if (_config.HealthChecks.Logging.StoreInDatabase)
             {
-                await StoreInDatabase(endpoint, result);
+                await StoreInDatabaseAsync(result);
             }
 
-            _logger.LogDebug("Stored health check result for endpoint {Endpoint}", endpoint);
+            _logger.LogDebug("Stored health check result");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error storing health check result for endpoint {Endpoint}", endpoint);
+            _logger.LogError(ex, "Error storing health check result");
             throw;
         }
     }
 
-    public async Task<IEnumerable<HealthCheckResult>> GetHistory(
-        string endpoint,
-        DateTime? startTime = null,
-        DateTime? endTime = null,
-        int? limit = null)
-    {
-        try
-        {
-            if (!_history.TryGetValue(endpoint, out var history))
-            {
-                return Enumerable.Empty<HealthCheckResult>();
-            }
-
-            IEnumerable<HealthCheckResult> results;
-            lock (history)
-            {
-                results = history.ToList();
-            }
-
-            if (startTime.HasValue)
-            {
-                results = results.Where(r => r.Entries.Any(e => e.Value.Data.ContainsKey("LastCheckTime") && 
-                    (DateTime)e.Value.Data["LastCheckTime"] >= startTime.Value));
-            }
-
-            if (endTime.HasValue)
-            {
-                results = results.Where(r => r.Entries.Any(e => e.Value.Data.ContainsKey("LastCheckTime") && 
-                    (DateTime)e.Value.Data["LastCheckTime"] <= endTime.Value));
-            }
-
-            if (limit.HasValue)
-            {
-                results = results.TakeLast(limit.Value);
-            }
-
-            return results;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving health check history for endpoint {Endpoint}", endpoint);
-            throw;
-        }
-    }
-
-    public async Task<HealthCheckAnalytics> GetAnalytics(
-        string endpoint,
+    public async Task<IEnumerable<HealthReport>> GetHealthCheckHistoryAsync(
         DateTime startTime,
         DateTime endTime)
     {
         try
         {
-            var history = await GetHistory(endpoint, startTime, endTime);
-            var analytics = new HealthCheckAnalytics
-            {
-                StartTime = startTime,
-                EndTime = endTime,
-                TotalChecks = history.Count(),
-                HealthyChecks = history.Count(r => r.Status == HealthStatus.Healthy),
-                UnhealthyChecks = history.Count(r => r.Status != HealthStatus.Healthy),
-                AverageDuration = history.Average(r => r.TotalDuration.TotalMilliseconds),
-                Issues = GetTopIssues(history)
-            };
+            var results = new List<HealthReport>();
+            var dates = GetDateRange(startTime, endTime);
 
-            return analytics;
+            foreach (var date in dates)
+            {
+                var key = date.ToString("yyyy-MM-dd");
+                if (_history.TryGetValue(key, out var dayHistory))
+                {
+                    lock (dayHistory)
+                    {
+                        results.AddRange(dayHistory);
+                    }
+                }
+            }
+
+            return results.OrderByDescending(r => r.TotalDuration);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error calculating health check analytics for endpoint {Endpoint}", endpoint);
+            _logger.LogError(ex, "Error retrieving health check history");
             throw;
         }
     }
 
-    private List<HealthCheckIssue> GetTopIssues(IEnumerable<HealthCheckResult> history)
+    public async Task<HealthCheckAnalytics> GetAnalytics(string endpoint, DateTime startTime, DateTime endTime)
     {
-        return history
-            .Where(r => r.Status != HealthStatus.Healthy)
-            .SelectMany(r => r.Entries)
-            .Where(e => e.Value.Status != HealthStatus.Healthy)
-            .GroupBy(e => new { Name = e.Key, Status = e.Value.Status, Description = e.Value.Description })
-            .Select(g => new HealthCheckIssue
+        try
+        {
+            var reports = await GetHealthCheckHistoryAsync(startTime, endTime);
+            var analytics = new HealthCheckAnalytics
             {
-                Name = g.Key.Name,
-                Status = g.Key.Status.ToString(),
-                Description = g.Key.Description ?? "No description",
-                Count = g.Count(),
-                LastOccurrence = g.Max(e => e.Value.Data.ContainsKey("LastCheckTime") 
-                    ? (DateTime)e.Value.Data["LastCheckTime"] 
-                    : DateTime.UtcNow)
-            })
-            .OrderByDescending(i => i.Count)
-            .ToList();
+                StartTime = startTime,
+                EndTime = endTime,
+                TotalChecks = reports.Count(),
+                HealthyChecks = reports.Count(r => r.Status == Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy),
+                UnhealthyChecks = reports.Count(r => r.Status != Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy),
+                AverageDuration = reports.Any() ? 
+                    reports.Average(r => r.TotalDuration.TotalMilliseconds) : 
+                    0
+            };
+
+            // Group issues by description
+            var issues = reports
+                .Where(r => r.Status != Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy)
+                .SelectMany(r => r.Entries)
+                .Where(e => e.Value.Status != Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy)
+                .GroupBy(e => e.Value.Description)
+                .Select(g => new HealthCheckIssue
+                {
+                    Name = g.First().Key,
+                    Description = g.First().Value.Description ?? "",
+                    Status = g.First().Value.Status.ToString(),
+                    Count = g.Count(),
+                    LastOccurrence = DateTime.UtcNow // Using current time as reports don't have timestamps
+                })
+                .OrderByDescending(i => i.Count)
+                .ToList();
+
+            analytics.Issues = issues;
+            return analytics;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting health check analytics");
+            throw;
+        }
     }
 
-    private async Task StoreInDatabase(string endpoint, HealthCheckResult result)
+    public async Task CleanupOldEntriesAsync()
+    {
+        try
+        {
+            var cutoffDate = DateTime.UtcNow - _retentionPeriod;
+            var oldKeys = _history.Keys
+                .Where(k => DateTime.TryParse(k, out var date) && date < cutoffDate)
+                .ToList();
+
+            foreach (var key in oldKeys)
+            {
+                _history.TryRemove(key, out _);
+            }
+
+            if (_config.HealthChecks.Logging.StoreInDatabase)
+            {
+                await CleanupDatabaseAsync(cutoffDate);
+            }
+
+            _logger.LogInformation("Cleaned up {Count} old health check entries", oldKeys.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error cleaning up old health check entries");
+            throw;
+        }
+    }
+
+    private IEnumerable<DateTime> GetDateRange(DateTime startTime, DateTime endTime)
+    {
+        for (var date = startTime.Date; date <= endTime.Date; date = date.AddDays(1))
+        {
+            yield return date;
+        }
+    }
+
+    private async Task StoreInDatabaseAsync(HealthReport result)
     {
         // Implement database storage if needed
         await Task.CompletedTask;
     }
-}
 
-public class HealthCheckAnalytics
-{
-    public DateTime StartTime { get; set; }
-    public DateTime EndTime { get; set; }
-    public int TotalChecks { get; set; }
-    public int HealthyChecks { get; set; }
-    public int UnhealthyChecks { get; set; }
-    public double AverageDuration { get; set; }
-    public List<HealthCheckIssue> Issues { get; set; } = new();
-}
-
-public class HealthCheckIssue
-{
-    public string Name { get; set; } = string.Empty;
-    public string Status { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public int Count { get; set; }
-    public DateTime LastOccurrence { get; set; }
+    private async Task CleanupDatabaseAsync(DateTime cutoffDate)
+    {
+        // Implement database cleanup if needed
+        await Task.CompletedTask;
+    }
 }

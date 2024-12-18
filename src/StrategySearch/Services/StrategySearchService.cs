@@ -1,24 +1,25 @@
 using TradingSystem.Common.Interfaces;
 using TradingSystem.Common.Models;
+using TradingSystem.StrategySearch.Services.Backtesting;
 
 namespace TradingSystem.StrategySearch.Services;
 
 public class StrategySearchService
 {
     private readonly ITheoryGenerator _theoryGenerator;
-    private readonly IBacktester _backtester;
+    private readonly TheoryBacktester _backtester;
     private readonly IStrategyOptimizer _optimizer;
     private readonly IRiskManager _riskManager;
     private readonly string[] _symbols;
 
     public StrategySearchService(
         ITheoryGenerator theoryGenerator,
-        IBacktester backtester,
+        IMarketDataService marketDataService,
         IStrategyOptimizer optimizer,
         IRiskManager riskManager)
     {
         _theoryGenerator = theoryGenerator;
-        _backtester = backtester;
+        _backtester = new TheoryBacktester(marketDataService, riskManager);
         _optimizer = optimizer;
         _riskManager = riskManager;
         
@@ -48,8 +49,12 @@ public class StrategySearchService
                 // Optimize the theory
                 var optimizationResult = await _optimizer.Optimize(theory, startDate, endDate);
                 
-                // Calculate risk metrics for the optimized theory
-                await _riskManager.UpdateRiskMetrics(optimizationResult.BacktestResult.Trades.Last());
+                // Update risk parameters based on the optimized theory's performance
+                if (optimizationResult.BacktestResult.Trades.Any())
+                {
+                    var riskParameters = ExtractRiskParameters(optimizationResult.BacktestResult);
+                    await _riskManager.UpdateRiskParametersAsync(riskParameters);
+                }
 
                 // Add timing information
                 optimizationResult.OptimizationTime = DateTime.UtcNow - startTime;
@@ -88,5 +93,36 @@ public class StrategySearchService
         var winRateBonus = result.WinRate - 0.5m; // Reward win rates above 50%
 
         return returnComponent - drawdownPenalty + consistencyBonus + profitFactorBonus + winRateBonus;
+    }
+
+    private Dictionary<string, decimal> ExtractRiskParameters(BacktestResult result)
+    {
+        var winningTrades = result.Trades.Where(t => (t.RealizedPnL ?? 0) > 0).ToList();
+        var losingTrades = result.Trades.Where(t => (t.RealizedPnL ?? 0) <= 0).ToList();
+
+        // Calculate average position sizes and risk metrics from successful trades
+        var avgWinningSize = winningTrades.Any() ? winningTrades.Average(t => t.Quantity) : 0m;
+
+        // Calculate average stop loss percentage, handling nullable values
+        var avgStopLoss = losingTrades.Any() 
+            ? losingTrades
+                .Where(t => t.StopLoss.HasValue)
+                .Average(t => Math.Abs((t.StopLoss!.Value - t.EntryPrice) / t.EntryPrice)) 
+            : 0.02m;
+
+        // Calculate average take profit percentage, handling nullable values
+        var avgTakeProfit = winningTrades.Any() 
+            ? winningTrades
+                .Where(t => t.TakeProfit.HasValue)
+                .Average(t => Math.Abs((t.TakeProfit!.Value - t.EntryPrice) / t.EntryPrice)) 
+            : 0.04m;
+
+        return new Dictionary<string, decimal>
+        {
+            ["MaxPositionSize"] = avgWinningSize,
+            ["StopLossPercent"] = avgStopLoss * 100, // Convert to percentage
+            ["TakeProfitPercent"] = avgTakeProfit * 100, // Convert to percentage
+            ["MaxDrawdown"] = result.MaxDrawdown * 100 // Convert to percentage
+        };
     }
 }

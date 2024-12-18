@@ -34,40 +34,6 @@ public class Order
     public string TriggerCondition { get; set; } = string.Empty;
 }
 
-public enum OrderType
-{
-    Market,
-    Limit,
-    StopLoss,
-    StopLossLimit,
-    TakeProfit,
-    TakeProfitLimit,
-    TrailingStop,
-    TrailingStopLimit,
-    LimitMaker,
-    ConditionalLimit,
-    ConditionalMarket
-}
-
-public enum OrderSide
-{
-    Buy,
-    Sell
-}
-
-public enum OrderStatus
-{
-    New,
-    PartiallyFilled,
-    Filled,
-    Canceled,
-    Rejected,
-    Expired,
-    PendingCancel,
-    PendingNew,
-    PendingReplace
-}
-
 public enum TimeInForce
 {
     GoodTillCancel,
@@ -76,15 +42,4 @@ public enum TimeInForce
     GoodTillDate,
     GoodTillCrossing,
     PostOnly
-}
-
-public enum OrderTriggerType
-{
-    LastPrice,
-    MarkPrice,
-    IndexPrice,
-    PriceDeviation,
-    Volume,
-    Time,
-    Technical
 }

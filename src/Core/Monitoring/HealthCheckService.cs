@@ -1,19 +1,21 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TradingSystem.Core.Configuration;
-using TradingSystem.Core.Monitoring.Models;
+using TradingSystem.Core.Monitoring.Interfaces;
 
 namespace TradingSystem.Core.Monitoring;
 
-public class HealthCheckService : IHealthCheck
+public class HealthCheckService : IHealthCheckService
 {
     private readonly ILogger<HealthCheckService> _logger;
-    private readonly MonitoringConfig _config;
+    private readonly TradingSystem.Core.Configuration.MonitoringConfig _config;
     private readonly IServiceProvider _serviceProvider;
+    private HealthReport? _latestReport;
 
     public HealthCheckService(
         ILogger<HealthCheckService> logger,
-        IOptions<MonitoringConfig> config,
+        IOptions<TradingSystem.Core.Configuration.MonitoringConfig> config,
         IServiceProvider serviceProvider)
     {
         _logger = logger;
@@ -21,9 +23,7 @@ public class HealthCheckService : IHealthCheck
         _serviceProvider = serviceProvider;
     }
 
-    public async Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context,
-        CancellationToken cancellationToken = default)
+    public async Task<HealthReport> CheckHealthAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -37,30 +37,121 @@ public class HealthCheckService : IHealthCheck
             var coreServicesHealthy = await CheckCoreServicesAsync();
             if (!coreServicesHealthy)
             {
-                return HealthCheckResult.Unhealthy("Core services check failed", null, data);
+                _latestReport = new HealthReport(
+                    new Dictionary<string, HealthReportEntry>
+                    {
+                        { "CoreServices", new HealthReportEntry(
+                            HealthStatus.Unhealthy,
+                            "Core services check failed",
+                            TimeSpan.Zero,
+                            null,
+                            data) }
+                    },
+                    TimeSpan.Zero);
+                return _latestReport;
             }
 
             // Check infrastructure
             var infrastructureHealthy = await CheckInfrastructureAsync();
             if (!infrastructureHealthy)
             {
-                return HealthCheckResult.Degraded("Infrastructure check failed", null, data);
+                _latestReport = new HealthReport(
+                    new Dictionary<string, HealthReportEntry>
+                    {
+                        { "Infrastructure", new HealthReportEntry(
+                            HealthStatus.Degraded,
+                            "Infrastructure check failed",
+                            TimeSpan.Zero,
+                            null,
+                            data) }
+                    },
+                    TimeSpan.Zero);
+                return _latestReport;
             }
 
             // Check dependencies
             var dependenciesHealthy = await CheckDependenciesAsync();
             if (!dependenciesHealthy)
             {
-                return HealthCheckResult.Degraded("Dependencies check failed", null, data);
+                _latestReport = new HealthReport(
+                    new Dictionary<string, HealthReportEntry>
+                    {
+                        { "Dependencies", new HealthReportEntry(
+                            HealthStatus.Degraded,
+                            "Dependencies check failed",
+                            TimeSpan.Zero,
+                            null,
+                            data) }
+                    },
+                    TimeSpan.Zero);
+                return _latestReport;
             }
 
-            return HealthCheckResult.Healthy("All systems operational", data);
+            _latestReport = new HealthReport(
+                new Dictionary<string, HealthReportEntry>
+                {
+                    { "Overall", new HealthReportEntry(
+                        HealthStatus.Healthy,
+                        "All systems operational",
+                        TimeSpan.Zero,
+                        null,
+                        data) }
+                },
+                TimeSpan.Zero);
+            return _latestReport;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error performing health check");
-            return HealthCheckResult.Unhealthy("Health check failed", ex);
+            _latestReport = new HealthReport(
+                new Dictionary<string, HealthReportEntry>
+                {
+                    { "Error", new HealthReportEntry(
+                        HealthStatus.Unhealthy,
+                        "Health check failed",
+                        TimeSpan.Zero,
+                        ex,
+                        null) }
+                },
+                TimeSpan.Zero);
+            return _latestReport;
         }
+    }
+
+    public Task<HealthReport> GetLatestHealthReportAsync()
+    {
+        return Task.FromResult(_latestReport ?? new HealthReport(
+            new Dictionary<string, HealthReportEntry>(),
+            TimeSpan.Zero));
+    }
+
+    public Task<IEnumerable<HealthReport>> GetHistoricalHealthReportsAsync(DateTime startTime, DateTime endTime)
+    {
+        // In a real implementation, this would fetch from storage
+        return Task.FromResult<IEnumerable<HealthReport>>(new[] { _latestReport ?? new HealthReport(
+            new Dictionary<string, HealthReportEntry>(),
+            TimeSpan.Zero) });
+    }
+
+    public HealthStatus GetComponentStatus(string componentName)
+    {
+        if (_latestReport?.Entries.TryGetValue(componentName, out var entry) == true)
+        {
+            return entry.Status;
+        }
+        return HealthStatus.Unhealthy; // Default to unhealthy instead of Unknown
+    }
+
+    public IReadOnlyDictionary<string, HealthStatus> GetAllComponentStatuses()
+    {
+        if (_latestReport == null)
+        {
+            return new Dictionary<string, HealthStatus>();
+        }
+
+        return _latestReport.Entries.ToDictionary(
+            e => e.Key,
+            e => e.Value.Status);
     }
 
     private async Task<bool> CheckCoreServicesAsync()
@@ -103,36 +194,5 @@ public class HealthCheckService : IHealthCheck
             _logger.LogError(ex, "Dependencies check failed");
             return false;
         }
-    }
-
-    public IReadOnlyList<HealthCheckEndpoint> GetRegisteredEndpoints()
-    {
-        // Create a default list of endpoints based on the configuration
-        var endpoints = new List<HealthCheckEndpoint>
-        {
-            new HealthCheckEndpoint
-            {
-                Name = "Core Services",
-                Uri = "/health/core",
-                Weight = 3,
-                Tags = new List<string> { "core" }
-            },
-            new HealthCheckEndpoint
-            {
-                Name = "Infrastructure",
-                Uri = "/health/infrastructure",
-                Weight = 2,
-                Tags = new List<string> { "infrastructure" }
-            },
-            new HealthCheckEndpoint
-            {
-                Name = "Dependencies",
-                Uri = "/health/dependencies",
-                Weight = 1,
-                Tags = new List<string> { "dependencies" }
-            }
-        };
-
-        return endpoints;
     }
 }

@@ -1,187 +1,110 @@
-using System.Text.Json;
+using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TradingSystem.Core.Configuration;
+using TradingSystem.Core.Monitoring.Interfaces;
+using TradingSystem.Core.Monitoring.Models;
+using TradingSystem.Core.Monitoring.Services;
 
 namespace TradingSystem.Core.Monitoring;
 
 public class HealthCheckMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly HealthCheckService _healthCheckService;
-    private readonly MonitoringConfig _config;
     private readonly ILogger<HealthCheckMiddleware> _logger;
+    private readonly TradingSystem.Core.Configuration.MonitoringConfig _config;
+    private readonly IHealthCheckService _healthCheckService;
+    private readonly HealthCheckStorageService _storageService;
+    private readonly HealthCheckNotificationService _notificationService;
 
     public HealthCheckMiddleware(
         RequestDelegate next,
-        HealthCheckService healthCheckService,
-        IOptions<MonitoringConfig> config,
-        ILogger<HealthCheckMiddleware> logger)
+        ILogger<HealthCheckMiddleware> logger,
+        IOptions<TradingSystem.Core.Configuration.MonitoringConfig> config,
+        IHealthCheckService healthCheckService,
+        HealthCheckStorageService storageService,
+        HealthCheckNotificationService notificationService)
     {
         _next = next;
-        _healthCheckService = healthCheckService;
-        _config = config.Value;
         _logger = logger;
+        _config = config.Value;
+        _healthCheckService = healthCheckService;
+        _storageService = storageService;
+        _notificationService = notificationService;
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (context.Request.Path.StartsWithSegments("/health"))
+        if (!IsHealthCheckEndpoint(context.Request.Path))
         {
-            await HandleHealthCheckRequest(context);
+            await _next(context);
             return;
         }
 
-        await _next(context);
-    }
-
-    private async Task HandleHealthCheckRequest(HttpContext context)
-    {
+        var sw = Stopwatch.StartNew();
         try
         {
             var report = await _healthCheckService.CheckHealthAsync();
-            var path = context.Request.Path.Value?.ToLower();
+            sw.Stop();
 
-            switch (context.Request.Headers.Accept.FirstOrDefault())
+            await _storageService.StoreHealthCheckResultAsync(report);
+
+            if (report.Status != Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy)
             {
-                case "application/json":
-                    await WriteJsonResponse(context, report);
-                    break;
-
-                default:
-                    if (path?.Contains("ui") == true)
-                    {
-                        await WriteHtmlResponse(context, report);
-                    }
-                    else
-                    {
-                        await WriteJsonResponse(context, report);
-                    }
-                    break;
+                await _notificationService.ProcessHealthCheckResultAsync(report);
             }
+
+            await WriteResponseAsync(context, report);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error executing health checks");
-            await HandleHealthCheckError(context, ex);
+            _logger.LogError(ex, "Error processing health check request");
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                Status = "Error",
+                Message = "Failed to process health check",
+                Error = ex.Message
+            });
         }
     }
 
-    private async Task WriteJsonResponse(HttpContext context, HealthReport report)
+    private bool IsHealthCheckEndpoint(PathString path)
+    {
+        return path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWithSegments("/healthz", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task WriteResponseAsync(HttpContext context, HealthReport report)
     {
         context.Response.ContentType = "application/json";
-        context.Response.StatusCode = report.Status == HealthStatus.Healthy ? 
-            StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable;
+        context.Response.StatusCode = report.Status == Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy ? 
+            StatusCodes.Status200OK : 
+            StatusCodes.Status503ServiceUnavailable;
 
-        var response = new
+        await context.Response.WriteAsJsonAsync(new
         {
-            status = report.Status.ToString(),
-            duration = report.TotalDuration,
-            timestamp = DateTime.UtcNow,
-            entries = report.Entries.Select(e => new
-            {
-                key = e.Key,
-                status = e.Value.Status.ToString(),
-                description = e.Value.Description,
-                duration = e.Value.Duration,
-                data = e.Value.Data,
-                error = e.Value.Exception?.Message,
-                tags = GetHealthCheckTags(e.Key)
-            })
-        };
-
-        await JsonSerializer.SerializeAsync(
-            context.Response.Body, 
-            response, 
-            new JsonSerializerOptions { WriteIndented = true }
-        );
-    }
-
-    private async Task WriteHtmlResponse(HttpContext context, HealthReport report)
-    {
-        var templatePath = report.Status == HealthStatus.Healthy ?
-            "HealthCheckStatus" : "HealthCheckError";
-
-        context.Response.ContentType = "text/html";
-        context.Response.StatusCode = report.Status == HealthStatus.Healthy ? 
-            StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable;
-
-        var viewModel = new
-        {
-            Report = report,
-            Config = _config,
-            Environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
-            MachineName = Environment.MachineName,
-            ProcessUptime = DateTime.Now - Process.GetCurrentProcess().StartTime,
-            Tags = _config.HealthChecks.Tags
-        };
-
-        await context.Response.WriteAsync(await RenderTemplate(templatePath, viewModel));
-    }
-
-    private async Task HandleHealthCheckError(HttpContext context, Exception exception)
-    {
-        context.Response.ContentType = "text/html";
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-
-        if (context.Request.Headers.Accept.FirstOrDefault() == "application/json")
-        {
-            var error = new
-            {
-                status = "Error",
-                timestamp = DateTime.UtcNow,
-                error = exception.Message,
-                details = exception.StackTrace
-            };
-
-            await JsonSerializer.SerializeAsync(
-                context.Response.Body,
-                error,
-                new JsonSerializerOptions { WriteIndented = true }
-            );
-        }
-        else
-        {
-            await context.Response.WriteAsync(
-                await RenderTemplate("HealthCheckError", exception)
-            );
-        }
-    }
-
-    private string[] GetHealthCheckTags(string healthCheckName)
-    {
-        return _config.HealthChecks.Tags
-            .Where(t => t.HealthChecks.Contains(healthCheckName))
-            .Select(t => t.Name)
-            .ToArray();
-    }
-
-    private async Task<string> RenderTemplate(string templateName, object model)
-    {
-        var assembly = typeof(HealthCheckMiddleware).Assembly;
-        var templatePath = $"wwwroot/templates/{templateName}.cshtml";
-        
-        using var stream = assembly.GetManifestResourceStream(templatePath);
-        if (stream == null)
-        {
-            throw new InvalidOperationException($"Template {templateName} not found");
-        }
-
-        using var reader = new StreamReader(stream);
-        var template = await reader.ReadToEndAsync();
-
-        // In a real implementation, you would use a proper template engine like RazorLight
-        // This is a simplified placeholder that would need to be replaced
-        return template.Replace("@Model", JsonSerializer.Serialize(model));
+            Status = report.Status.ToString(),
+            Duration = report.TotalDuration,
+            Entries = report.Entries.ToDictionary(
+                e => e.Key,
+                e => new
+                {
+                    Status = e.Value.Status.ToString(),
+                    Description = e.Value.Description,
+                    Duration = e.Value.Duration,
+                    Data = e.Value.Data
+                })
+        });
     }
 }
 
 public static class HealthCheckMiddlewareExtensions
 {
-    public static IApplicationBuilder UseHealthChecks(
-        this IApplicationBuilder builder)
+    public static IApplicationBuilder UseHealthChecks(this IApplicationBuilder app)
     {
-        return builder.UseMiddleware<HealthCheckMiddleware>();
+        return app.UseMiddleware<HealthCheckMiddleware>();
     }
 }

@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using Prometheus;
 using TradingSystem.Core.Monitoring.Auth;
+using TradingSystem.Core.Monitoring.Interfaces;
 using TradingSystem.Core.Monitoring.Models;
 using TradingSystem.Core.Monitoring.Services;
 
@@ -14,7 +16,7 @@ namespace TradingSystem.Core.Monitoring.Controllers;
 public class HealthCheckController : ControllerBase
 {
     private readonly ILogger<HealthCheckController> _logger;
-    private readonly HealthCheckService _healthCheckService;
+    private readonly IHealthCheckService _healthCheckService;
     private readonly HealthCheckStorageService _storageService;
     private readonly HealthCheckNotificationService _notificationService;
     private readonly Counter _requestCounter;
@@ -23,7 +25,7 @@ public class HealthCheckController : ControllerBase
 
     public HealthCheckController(
         ILogger<HealthCheckController> logger,
-        HealthCheckService healthCheckService,
+        IHealthCheckService healthCheckService,
         HealthCheckStorageService storageService,
         HealthCheckNotificationService notificationService)
     {
@@ -58,20 +60,19 @@ public class HealthCheckController : ControllerBase
     }
 
     [HttpGet]
-    [ProducesResponseType(typeof(HealthCheckResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(HealthReport), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GetHealthStatus()
     {
         try
         {
-            var context = new HealthCheckContext();
-            var result = await _healthCheckService.CheckHealthAsync(context);
+            var result = await _healthCheckService.CheckHealthAsync();
 
             _requestCounter.WithLabels("health", "GET", result.Status.ToString()).Inc();
 
             using (_requestDuration.WithLabels("health", "GET").NewTimer())
             {
-                return result.Status == HealthStatus.Healthy ? 
+                return result.Status == Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy ? 
                     Ok(result) : 
                     StatusCode(StatusCodes.Status503ServiceUnavailable, result);
             }
@@ -91,7 +92,7 @@ public class HealthCheckController : ControllerBase
     }
 
     [HttpGet("history")]
-    [ProducesResponseType(typeof(IEnumerable<HealthCheckResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IEnumerable<HealthReport>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetHealthHistory(
         [FromQuery] string endpoint,
         [FromQuery] DateTime? startTime = null,
@@ -100,7 +101,9 @@ public class HealthCheckController : ControllerBase
     {
         try
         {
-            var history = await _storageService.GetHistory(endpoint, startTime, endTime, limit);
+            var history = await _healthCheckService.GetHistoricalHealthReportsAsync(
+                startTime ?? DateTime.UtcNow.AddDays(-1),
+                endTime ?? DateTime.UtcNow);
             return Ok(history);
         }
         catch (Exception ex)
@@ -178,7 +181,7 @@ public class HealthCheckController : ControllerBase
     {
         try
         {
-            var endpoints = _healthCheckService.GetRegisteredEndpoints();
+            var endpoints = _healthCheckService.GetAllComponentStatuses();
             return Ok(endpoints);
         }
         catch (Exception ex)
@@ -198,7 +201,7 @@ public class HealthCheckController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> TestNotification(
         [FromQuery] string channel,
-        [FromBody] HealthCheckResult testResult)
+        [FromBody] HealthReport testResult)
     {
         try
         {
@@ -214,7 +217,7 @@ public class HealthCheckController : ControllerBase
                 }
             };
 
-            await _notificationService.SendNotification(notification, testResult);
+            await _notificationService.ProcessHealthCheckResultAsync(testResult);
             return Ok(new { Message = "Test notification sent successfully" });
         }
         catch (Exception ex)

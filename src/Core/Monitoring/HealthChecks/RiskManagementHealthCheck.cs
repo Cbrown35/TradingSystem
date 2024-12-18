@@ -1,65 +1,81 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using TradingSystem.Common.Interfaces;
+using TradingSystem.Common.Models;
 
 namespace TradingSystem.Core.Monitoring.HealthChecks;
 
 public class RiskManagementHealthCheck : IHealthCheck
 {
-    private readonly ILogger<RiskManagementHealthCheck> _logger;
     private readonly IRiskManager _riskManager;
+    private readonly ILogger<RiskManagementHealthCheck> _logger;
 
     public RiskManagementHealthCheck(
-        ILogger<RiskManagementHealthCheck> logger,
-        IRiskManager riskManager)
+        IRiskManager riskManager,
+        ILogger<RiskManagementHealthCheck> logger)
     {
-        _logger = logger;
         _riskManager = riskManager;
+        _logger = logger;
     }
 
-    public async Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context,
-        CancellationToken cancellationToken = default)
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Test risk management service by getting current risk metrics
-            var metrics = await _riskManager.GetCurrentRiskMetrics();
+            var metrics = await _riskManager.GetCurrentRiskMetricsAsync();
+            var riskLimits = await _riskManager.GetRiskLimitsAsync();
 
             var data = new Dictionary<string, object>
             {
-                { "LastCheckTime", DateTime.UtcNow },
-                { "TotalExposure", metrics.TotalExposure },
+                { "AccountEquity", metrics.AccountEquity },
+                { "TotalRisk", metrics.TotalRisk },
+                { "MarginUsed", metrics.MarginUsed },
                 { "MaxDrawdown", metrics.MaxDrawdown },
-                { "PositionCount", metrics.OpenPositions },
-                { "RiskLevel", metrics.CurrentRiskLevel }
+                { "OpenPositions", metrics.OpenPositions.Count }
             };
 
-            // Check if any risk thresholds are exceeded
-            if (metrics.CurrentRiskLevel > metrics.MaxAllowedRiskLevel)
+            // Add risk limits
+            foreach (var limit in riskLimits)
             {
-                return HealthCheckResult.Degraded(
-                    "Risk management system reports elevated risk levels",
-                    null,
-                    data);
+                data[$"Limit_{limit.Key}"] = limit.Value;
             }
 
-            return HealthCheckResult.Healthy(
-                "Risk management services are operational",
-                data);
+            // Check for risk threshold violations
+            var warnings = new List<string>();
+
+            // Check portfolio risk
+            var portfolioRisk = metrics.TotalRisk / metrics.AccountEquity;
+            if (portfolioRisk > riskLimits["MaxPortfolioRisk"])
+            {
+                warnings.Add($"Portfolio risk ({portfolioRisk:P2}) exceeds maximum allowed ({riskLimits["MaxPortfolioRisk"]:P2})");
+            }
+
+            // Check drawdown
+            if (metrics.MaxDrawdown > riskLimits["MaxDrawdown"])
+            {
+                warnings.Add($"Drawdown ({metrics.MaxDrawdown:P2}) exceeds maximum allowed ({riskLimits["MaxDrawdown"]:P2})");
+            }
+
+            // Check margin usage
+            var marginUsageRatio = metrics.MarginUsed / metrics.AccountEquity;
+            if (marginUsageRatio > riskLimits["MaxLeverage"])
+            {
+                warnings.Add($"Margin usage ({marginUsageRatio:P2}) exceeds maximum leverage ({riskLimits["MaxLeverage"]:P2})");
+            }
+
+            if (warnings.Any())
+            {
+                return HealthCheckResult.Degraded(
+                    $"Risk management warnings: {string.Join(", ", warnings)}",
+                    data: data);
+            }
+
+            return HealthCheckResult.Healthy("Risk management system is operational", data);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Risk management health check failed");
-            return HealthCheckResult.Unhealthy(
-                "Risk management services are not responding",
-                ex,
-                new Dictionary<string, object>
-                {
-                    { "LastCheckTime", DateTime.UtcNow },
-                    { "ErrorType", ex.GetType().Name },
-                    { "ErrorMessage", ex.Message }
-                });
+            return HealthCheckResult.Unhealthy("Risk management health check failed", ex);
         }
     }
 }

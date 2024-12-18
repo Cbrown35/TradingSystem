@@ -8,6 +8,8 @@ namespace TradingSystem.Infrastructure.Repositories;
 
 public class MarketDataRepository : RepositoryBase<MarketData>, IMarketDataRepository
 {
+    private const int VOLUME_LOOKBACK_DAYS = 20; // For calculating average volume
+
     public MarketDataRepository(
         TradingContext context,
         ILogger<MarketDataRepository> logger) : base(context, logger)
@@ -212,14 +214,16 @@ public class MarketDataRepository : RepositoryBase<MarketData>, IMarketDataRepos
         var data = await GetHistoricalDataForSymbols(symbols, startDate, endDate);
         var returns = new Dictionary<string, List<decimal>>();
 
-        // Calculate returns for each symbol
         foreach (var (symbol, marketData) in data)
         {
             returns[symbol] = new List<decimal>();
             for (int i = 1; i < marketData.Count; i++)
             {
-                var ret = (marketData[i].Close - marketData[i - 1].Close) / marketData[i - 1].Close;
-                returns[symbol].Add(ret);
+                if (marketData[i - 1].Close > 0)
+                {
+                    var ret = (marketData[i].Close - marketData[i - 1].Close) / marketData[i - 1].Close;
+                    returns[symbol].Add(ret);
+                }
             }
         }
 
@@ -264,16 +268,20 @@ public class MarketDataRepository : RepositoryBase<MarketData>, IMarketDataRepos
         var data = await GetHistoricalData(symbol, startDate, endDate);
         var result = new Dictionary<DateTime, LiquidityMetrics>();
 
+        var avgDailyVolume = data.Count > 0 ? data.Average(d => d.Volume) : 0;
+
         foreach (var marketData in data)
         {
             var metrics = new LiquidityMetrics
             {
                 Symbol = symbol,
                 Timestamp = marketData.Timestamp,
-                BidAskSpread = marketData.AskPrice!.Value - marketData.BidPrice!.Value,
-                MarketDepth = CalculateMarketDepth(marketData),
+                BidAskSpread = (marketData.AskPrice ?? 0) - (marketData.BidPrice ?? 0),
+                MarketDepth = CalculateMarketDepth(marketData, avgDailyVolume),
                 TradingVolume = marketData.Volume,
-                AverageTradeSize = marketData.Volume / marketData.NumberOfTrades
+                AverageTradeSize = marketData.NumberOfTrades > 0 
+                    ? marketData.Volume / marketData.NumberOfTrades 
+                    : 0
             };
 
             result[marketData.Timestamp] = metrics;
@@ -302,18 +310,28 @@ public class MarketDataRepository : RepositoryBase<MarketData>, IMarketDataRepos
             Low = g.Min(d => d.Low),
             Close = g.Last().Close,
             Volume = g.Sum(d => d.Volume),
-            Interval = targetTimeFrame
+            Interval = targetTimeFrame,
+            BidPrice = g.Last().BidPrice,
+            AskPrice = g.Last().AskPrice,
+            NumberOfTrades = g.Sum(d => d.NumberOfTrades)
         }).ToList();
     }
 
     private decimal CalculateVolatility(List<MarketData> data)
     {
+        if (!data.Any()) return 0;
+
         var returns = new List<decimal>();
         for (int i = 1; i < data.Count; i++)
         {
-            var dailyReturn = (data[i].Close - data[i - 1].Close) / data[i - 1].Close;
-            returns.Add(dailyReturn);
+            if (data[i - 1].Close > 0)
+            {
+                var dailyReturn = (data[i].Close - data[i - 1].Close) / data[i - 1].Close;
+                returns.Add(dailyReturn);
+            }
         }
+
+        if (!returns.Any()) return 0;
 
         var mean = returns.Average();
         var sumSquaredDiff = returns.Sum(r => (r - mean) * (r - mean));
@@ -325,6 +343,8 @@ public class MarketDataRepository : RepositoryBase<MarketData>, IMarketDataRepos
 
     private decimal CalculateTrendStrength(List<MarketData> data)
     {
+        if (!data.Any()) return 0;
+
         var prices = data.Select(d => d.Close).ToList();
         var n = prices.Count;
         var x = Enumerable.Range(0, n).Select(i => (decimal)i).ToList();
@@ -333,19 +353,24 @@ public class MarketDataRepository : RepositoryBase<MarketData>, IMarketDataRepos
         var sumX = x.Sum();
         var sumY = prices.Sum();
 
-        var slope = (n * xy - sumX * sumY) / (n * xx - sumX * sumX);
+        var denominator = (n * xx - sumX * sumX);
+        if (denominator == 0) return 0;
+
+        var slope = (n * xy - sumX * sumY) / denominator;
         var intercept = (sumY - slope * sumX) / n;
         var yHat = x.Select(a => slope * a + intercept).ToList();
 
         var ssReg = yHat.Zip(prices, (h, p) => (h - prices.Average()) * (h - prices.Average())).Sum();
         var ssTot = prices.Select(p => (p - prices.Average()) * (p - prices.Average())).Sum();
 
-        return ssReg / ssTot; // R-squared value
+        return ssTot > 0 ? ssReg / ssTot : 0; // R-squared value
     }
 
     private decimal CalculateCorrelation(List<decimal> x, List<decimal> y)
     {
         var n = Math.Min(x.Count, y.Count);
+        if (n == 0) return 0;
+
         var meanX = x.Take(n).Average();
         var meanY = y.Take(n).Average();
 
@@ -353,12 +378,14 @@ public class MarketDataRepository : RepositoryBase<MarketData>, IMarketDataRepos
         var sumXX = x.Take(n).Sum(a => (a - meanX) * (a - meanX));
         var sumYY = y.Take(n).Sum(b => (b - meanY) * (b - meanY));
 
-        return sumXY / (decimal)Math.Sqrt((double)(sumXX * sumYY));
+        var denominator = (decimal)Math.Sqrt((double)(sumXX * sumYY));
+        return denominator != 0 ? sumXY / denominator : 0;
     }
 
     private decimal CalculateVolatilityForTimeframe(List<MarketData> data, TimeSpan timeframe)
     {
-        var returns = new List<decimal>();
+        if (!data.Any()) return 0;
+
         var groupedData = data.GroupBy(d => new DateTime(
             d.Timestamp.Year,
             d.Timestamp.Month,
@@ -368,7 +395,35 @@ public class MarketDataRepository : RepositoryBase<MarketData>, IMarketDataRepos
             0
         )).Select(g => g.Last()).ToList();
 
+        var returns = new List<decimal>();
         for (int i = 1; i < groupedData.Count; i++)
         {
-            var ret = (groupedData[i].Close - groupedData[i - 1].Close) / groupedData[i - 1].Close;
-            returns.Ad
+            if (groupedData[i - 1].Close > 0)
+            {
+                var ret = (groupedData[i].Close - groupedData[i - 1].Close) / groupedData[i - 1].Close;
+                returns.Add(ret);
+            }
+        }
+
+        if (!returns.Any()) return 0;
+
+        var mean = returns.Average();
+        var sumSquaredDiff = returns.Sum(r => (r - mean) * (r - mean));
+        var variance = sumSquaredDiff / (returns.Count - 1);
+        var stdDev = (decimal)Math.Sqrt((double)variance);
+
+        // Annualize based on timeframe
+        var annualizationFactor = (decimal)Math.Sqrt(252.0 * 1440.0 / timeframe.TotalMinutes);
+        return stdDev * annualizationFactor;
+    }
+
+    private decimal CalculateMarketDepth(MarketData data, decimal avgDailyVolume)
+    {
+        if (data.Volume == 0 || data.High == data.Low) return 0;
+
+        var priceRange = data.High - data.Low;
+        var volumePerPriceUnit = data.Volume / priceRange;
+
+        return avgDailyVolume > 0 ? volumePerPriceUnit / avgDailyVolume : volumePerPriceUnit;
+    }
+}

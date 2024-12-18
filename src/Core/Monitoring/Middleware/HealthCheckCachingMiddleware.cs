@@ -1,9 +1,10 @@
 using System.Collections.Concurrent;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using TradingSystem.Core.Configuration;
-using TradingSystem.Core.Monitoring.Models;
 
 namespace TradingSystem.Core.Monitoring.Middleware;
 
@@ -12,14 +13,14 @@ public class HealthCheckCachingMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<HealthCheckCachingMiddleware> _logger;
     private readonly IDistributedCache _cache;
-    private readonly MonitoringConfig _config;
+    private readonly TradingSystem.Core.Configuration.MonitoringConfig _config;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks;
 
     public HealthCheckCachingMiddleware(
         RequestDelegate next,
         ILogger<HealthCheckCachingMiddleware> logger,
         IDistributedCache cache,
-        IOptions<MonitoringConfig> config)
+        IOptions<TradingSystem.Core.Configuration.MonitoringConfig> config)
     {
         _next = next;
         _logger = logger;
@@ -180,44 +181,4 @@ public class CachedResponse
     public int StatusCode { get; set; }
     public Dictionary<string, string> Headers { get; set; } = new();
     public string Body { get; set; } = string.Empty;
-}
-
-public static class HealthCheckCachingExtensions
-{
-    public static IApplicationBuilder UseHealthCheckCaching(
-        this IApplicationBuilder builder)
-    {
-        return builder.UseMiddleware<HealthCheckCachingMiddleware>();
-    }
-
-    public static IServiceCollection AddHealthCheckCaching(
-        this IServiceCollection services,
-        Action<HealthCheckCacheOptions>? configureOptions = null)
-    {
-        var options = new HealthCheckCacheOptions();
-        configureOptions?.Invoke(options);
-
-        services.AddDistributedMemoryCache();
-        
-        if (options.UseRedis)
-        {
-            services.AddStackExchangeRedisCache(redisOptions =>
-            {
-                redisOptions.Configuration = options.RedisConnectionString;
-                redisOptions.InstanceName = options.RedisInstanceName;
-            });
-        }
-
-        return services;
-    }
-}
-
-public class HealthCheckCacheOptions
-{
-    public bool UseRedis { get; set; }
-    public string RedisConnectionString { get; set; } = "localhost:6379";
-    public string RedisInstanceName { get; set; } = "HealthChecks_";
-    public int DefaultTimeToLiveSeconds { get; set; } = 30;
-    public int DefaultSlidingExpirationSeconds { get; set; } = 10;
-    public Dictionary<string, int> CustomCacheDurations { get; set; } = new();
 }

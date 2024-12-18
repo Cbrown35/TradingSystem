@@ -1,7 +1,10 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Prometheus;
 using TradingSystem.Core.Configuration;
+using TradingSystem.Core.Monitoring.Models;
 using TradingSystem.Core.Monitoring.Services;
 
 namespace TradingSystem.Core.Monitoring.Middleware;
@@ -10,198 +13,169 @@ public class HealthCheckLoggingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<HealthCheckLoggingMiddleware> _logger;
-    private readonly MonitoringConfig _config;
+    private readonly TradingSystem.Core.Configuration.MonitoringConfig _config;
     private readonly HealthCheckStorageService _storageService;
-    private readonly DiagnosticSource _diagnosticSource;
+    private readonly Counter _requestCounter;
+    private readonly Histogram _requestDuration;
+    private readonly Counter _errorCounter;
 
     public HealthCheckLoggingMiddleware(
         RequestDelegate next,
         ILogger<HealthCheckLoggingMiddleware> logger,
-        IOptions<MonitoringConfig> config,
+        IOptions<TradingSystem.Core.Configuration.MonitoringConfig> config,
         HealthCheckStorageService storageService)
     {
         _next = next;
         _logger = logger;
         _config = config.Value;
         _storageService = storageService;
-        _diagnosticSource = new DiagnosticListener("TradingSystem.HealthChecks");
+
+        _requestCounter = Metrics.CreateCounter(
+            "healthcheck_requests_total",
+            "Total number of health check requests",
+            new CounterConfiguration
+            {
+                LabelNames = new[] { "endpoint", "method", "status" }
+            });
+
+        _requestDuration = Metrics.CreateHistogram(
+            "healthcheck_request_duration_seconds",
+            "Duration of health check requests",
+            new HistogramConfiguration
+            {
+                LabelNames = new[] { "endpoint", "method" }
+            });
+
+        _errorCounter = Metrics.CreateCounter(
+            "healthcheck_errors_total",
+            "Total number of health check errors",
+            new CounterConfiguration
+            {
+                LabelNames = new[] { "endpoint", "code", "message" }
+            });
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!IsHealthCheckEndpoint(context))
+        if (!IsHealthCheckEndpoint(context.Request.Path))
         {
             await _next(context);
             return;
         }
 
-        var requestInfo = new HealthCheckRequestInfo
-        {
-            Timestamp = DateTime.UtcNow,
-            Path = context.Request.Path,
-            Method = context.Request.Method,
-            ClientIp = context.Connection.RemoteIpAddress?.ToString(),
-            UserId = context.User?.Identity?.Name,
-            UserAgent = context.Request.Headers.UserAgent.ToString(),
-            QueryString = context.Request.QueryString.ToString()
-        };
-
-        var stopwatch = Stopwatch.StartNew();
+        var sw = Stopwatch.StartNew();
+        var originalBodyStream = context.Response.Body;
 
         try
         {
-            // Start diagnostic activity
-            using var activity = StartActivity(context, requestInfo);
-
-            // Capture the original body stream
-            var originalBodyStream = context.Response.Body;
-
-            // Create a new memory stream
-            using var responseBody = new MemoryStream();
-            context.Response.Body = responseBody;
+            using var memoryStream = new MemoryStream();
+            context.Response.Body = memoryStream;
 
             await _next(context);
 
-            stopwatch.Stop();
-            requestInfo.Duration = stopwatch.Elapsed;
-            requestInfo.StatusCode = context.Response.StatusCode;
+            memoryStream.Seek(0, SeekOrigin.Begin);
+            await memoryStream.CopyToAsync(originalBodyStream);
 
-            // Read the response body
-            responseBody.Seek(0, SeekOrigin.Begin);
-            var responseContent = await new StreamReader(responseBody).ReadToEndAsync();
-            requestInfo.ResponseContent = responseContent;
+            sw.Stop();
 
-            // Copy the response to the original stream
-            responseBody.Seek(0, SeekOrigin.Begin);
-            await responseBody.CopyToAsync(originalBodyStream);
+            // Log request details
+            var requestLog = new HealthCheckRequestLog
+            {
+                Timestamp = DateTime.UtcNow,
+                Path = context.Request.Path,
+                Method = context.Request.Method,
+                StatusCode = context.Response.StatusCode,
+                Duration = sw.Elapsed,
+                UserAgent = context.Request.Headers["User-Agent"].ToString(),
+                ClientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown"
+            };
 
-            // Restore the original stream
-            context.Response.Body = originalBodyStream;
+            // Update metrics
+            _requestCounter.WithLabels(
+                context.Request.Path,
+                context.Request.Method,
+                context.Response.StatusCode.ToString()
+            ).Inc();
 
-            await LogHealthCheckRequest(requestInfo);
+            _requestDuration.WithLabels(
+                context.Request.Path,
+                context.Request.Method
+            ).Observe(sw.Elapsed.TotalSeconds);
+
+            if (context.Response.StatusCode >= 400)
+            {
+                _errorCounter.WithLabels(
+                    context.Request.Path,
+                    context.Response.StatusCode.ToString(),
+                    "Request failed"
+                ).Inc();
+            }
+
+            // Store request log if enabled
+            if (_config.HealthChecks.Logging.Enabled)
+            {
+                await StoreRequestLog(requestLog);
+            }
+
+            _logger.LogInformation(
+                "Health check request: {Method} {Path} {StatusCode} {Duration}ms",
+                requestLog.Method,
+                requestLog.Path,
+                requestLog.StatusCode,
+                requestLog.Duration.TotalMilliseconds);
         }
         catch (Exception ex)
         {
-            stopwatch.Stop();
-            requestInfo.Duration = stopwatch.Elapsed;
-            requestInfo.StatusCode = 500;
-            requestInfo.Error = ex.Message;
-
             _logger.LogError(ex, "Error processing health check request");
+            _errorCounter.WithLabels(
+                context.Request.Path,
+                "500",
+                ex.Message
+            ).Inc();
+
             throw;
         }
         finally
         {
-            EmitMetrics(requestInfo);
+            context.Response.Body = originalBodyStream;
         }
     }
 
-    private bool IsHealthCheckEndpoint(HttpContext context)
+    private bool IsHealthCheckEndpoint(PathString path)
     {
-        var path = context.Request.Path.Value?.ToLower() ?? "";
-        return path.StartsWith("/health") || 
-               path.StartsWith("/metrics") || 
-               path.StartsWith("/healthchecks-ui");
+        return path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWithSegments("/healthz", StringComparison.OrdinalIgnoreCase);
     }
 
-    private Activity? StartActivity(HttpContext context, HealthCheckRequestInfo requestInfo)
+    private async Task StoreRequestLog(HealthCheckRequestLog requestLog)
     {
-        var activity = new Activity("HealthCheck");
-        
-        if (activity.IsAllDataRequested)
+        try
         {
-            activity.SetTag("http.method", context.Request.Method);
-            activity.SetTag("http.url", context.Request.Path);
-            activity.SetTag("http.client_ip", requestInfo.ClientIp);
-            activity.SetTag("user.id", requestInfo.UserId);
-            activity.SetTag("user.agent", requestInfo.UserAgent);
+            // Store in memory cache or database
+            await Task.CompletedTask;
         }
-
-        return _diagnosticSource.StartActivity(activity, requestInfo);
-    }
-
-    private async Task LogHealthCheckRequest(HealthCheckRequestInfo requestInfo)
-    {
-        // Log to application insights or other logging provider
-        _logger.LogInformation(
-            "Health check request: {Path} {Method} {StatusCode} {Duration}ms",
-            requestInfo.Path,
-            requestInfo.Method,
-            requestInfo.StatusCode,
-            requestInfo.Duration.TotalMilliseconds);
-
-        // Store in database if configured
-        if (_config.HealthChecks.Logging.StoreInDatabase)
+        catch (Exception ex)
         {
-            await _storageService.StoreRequestLog(requestInfo);
-        }
-
-        // Write to file if configured
-        if (_config.HealthChecks.Logging.WriteToFile)
-        {
-            await WriteToLogFile(requestInfo);
-        }
-    }
-
-    private async Task WriteToLogFile(HealthCheckRequestInfo requestInfo)
-    {
-        var logEntry = $"{requestInfo.Timestamp:O}|{requestInfo.Path}|{requestInfo.Method}|" +
-                      $"{requestInfo.StatusCode}|{requestInfo.Duration.TotalMilliseconds}ms|" +
-                      $"{requestInfo.ClientIp}|{requestInfo.UserId}|{requestInfo.Error}\n";
-
-        var logPath = _config.HealthChecks.Logging.LogFilePath;
-        await File.AppendAllTextAsync(logPath, logEntry);
-    }
-
-    private void EmitMetrics(HealthCheckRequestInfo requestInfo)
-    {
-        MetricsConfig.HealthCheckRequests.Add(1, new TagList
-        {
-            { "path", requestInfo.Path },
-            { "method", requestInfo.Method },
-            { "status_code", requestInfo.StatusCode.ToString() }
-        });
-
-        MetricsConfig.HealthCheckDuration.Record(
-            requestInfo.Duration.TotalSeconds,
-            new TagList
-            {
-                { "path", requestInfo.Path },
-                { "method", requestInfo.Method }
-            });
-
-        if (requestInfo.StatusCode >= 400)
-        {
-            MetricsConfig.HealthCheckErrors.Add(1, new TagList
-            {
-                { "path", requestInfo.Path },
-                { "status_code", requestInfo.StatusCode.ToString() },
-                { "error", requestInfo.Error ?? "Unknown" }
-            });
+            _logger.LogError(ex, "Error storing health check request log");
         }
     }
 }
 
-public class HealthCheckRequestInfo
+public class HealthCheckRequestLog
 {
     public DateTime Timestamp { get; set; }
     public string Path { get; set; } = string.Empty;
     public string Method { get; set; } = string.Empty;
     public int StatusCode { get; set; }
     public TimeSpan Duration { get; set; }
-    public string? ClientIp { get; set; }
-    public string? UserId { get; set; }
-    public string? UserAgent { get; set; }
-    public string? QueryString { get; set; }
-    public string? ResponseContent { get; set; }
-    public string? Error { get; set; }
+    public string UserAgent { get; set; } = string.Empty;
+    public string ClientIp { get; set; } = string.Empty;
 }
 
-public static class HealthCheckLoggingExtensions
+public static class HealthCheckLoggingMiddlewareExtensions
 {
-    public static IApplicationBuilder UseHealthCheckLogging(
-        this IApplicationBuilder builder)
+    public static IApplicationBuilder UseHealthCheckLogging(this IApplicationBuilder app)
     {
-        return builder.UseMiddleware<HealthCheckLoggingMiddleware>();
+        return app.UseMiddleware<HealthCheckLoggingMiddleware>();
     }
 }

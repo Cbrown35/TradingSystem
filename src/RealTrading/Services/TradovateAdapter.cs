@@ -1,32 +1,28 @@
-using Newtonsoft.Json;
-using WebSocket4Net;
+using Microsoft.Extensions.Logging;
 using TradingSystem.Common.Interfaces;
 using TradingSystem.Common.Models;
 using TradingSystem.RealTrading.Models;
 
 namespace TradingSystem.RealTrading.Services;
 
-public class TradovateAdapter : IExchangeAdapter, IDisposable
+public class TradovateAdapter : IExchangeAdapter
 {
     private readonly TradovateConfig _config;
-    private readonly WebSocket _webSocket;
+    private readonly ILogger<TradovateAdapter> _logger;
     private readonly Dictionary<string, decimal> _lastPrices;
     private readonly Dictionary<string, List<Trade>> _openOrders;
-    private decimal _accountBalance = 10000m; // Starting with 10k USDT for demo
+    private readonly Dictionary<string, List<OrderBookLevel>> _orderBooks;
+    private decimal _accountBalance = 10000m;
 
-    public TradovateAdapter(TradovateConfig config)
+    public TradovateAdapter(TradovateConfig config, ILogger<TradovateAdapter> logger)
     {
         _config = config;
+        _logger = logger;
         _lastPrices = new Dictionary<string, decimal>();
         _openOrders = new Dictionary<string, List<Trade>>();
+        _orderBooks = new Dictionary<string, List<OrderBookLevel>>();
 
-        _webSocket = new WebSocket(_config.WebSocketUrl);
-        _webSocket.Opened += WebSocket_Opened;
-        _webSocket.MessageReceived += WebSocket_MessageReceived;
-        _webSocket.Error += WebSocket_Error;
-        _webSocket.Closed += WebSocket_Closed;
-
-        ConnectWebSocket();
+        InitializeTestData();
     }
 
     public Task<decimal> GetAccountBalance(string asset)
@@ -47,12 +43,18 @@ public class TradovateAdapter : IExchangeAdapter, IDisposable
             Symbol = symbol,
             EntryPrice = price,
             Quantity = quantity,
+            Direction = isLong ? TradeDirection.Long : TradeDirection.Short,
+            Status = TradeStatus.Open,
             OpenTime = DateTime.UtcNow,
-            Status = TradeStatus.Open
+            StopLoss = price * (isLong ? 0.98m : 1.02m),
+            TakeProfit = price * (isLong ? 1.04m : 0.96m)
         };
 
         _openOrders[symbol].Add(trade);
         _accountBalance -= quantity * price;
+
+        _logger.LogInformation("Placed {Direction} order for {Symbol}: {Quantity} @ {Price}",
+            isLong ? "LONG" : "SHORT", symbol, quantity, price);
 
         return trade;
     }
@@ -66,10 +68,12 @@ public class TradovateAdapter : IExchangeAdapter, IDisposable
             {
                 order.Status = TradeStatus.Closed;
                 order.CloseTime = DateTime.UtcNow;
-                var closePrice = await GetMarketPrice(order.Symbol);
+                var closePrice = GetCurrentPrice(order.Symbol);
                 order.RealizedPnL = (closePrice - order.EntryPrice) * order.Quantity;
-                _accountBalance += order.RealizedPnL;
+                _accountBalance += order.RealizedPnL ?? 0;
                 orders.Remove(order);
+
+                _logger.LogInformation("Closed order {OrderId} with PnL: {PnL}", orderId, order.RealizedPnL);
                 return order;
             }
         }
@@ -77,25 +81,24 @@ public class TradovateAdapter : IExchangeAdapter, IDisposable
         throw new InvalidOperationException($"Order {orderId} not found");
     }
 
-    public Task<List<Trade>> GetOpenOrders()
+    public List<Trade> GetOpenOrders()
     {
-        var allOrders = _openOrders.Values.SelectMany(x => x).ToList();
-        return Task.FromResult(allOrders);
+        return _openOrders.Values.SelectMany(x => x).ToList();
     }
 
-    public Task CancelAllOrders(string symbol)
+    public void CancelAllOrders(string symbol)
     {
         if (_openOrders.ContainsKey(symbol))
         {
             _openOrders[symbol].Clear();
+            _logger.LogInformation("Cancelled all orders for {Symbol}", symbol);
         }
-        return Task.CompletedTask;
     }
 
-    public async Task<MarketData> GetMarketData(string symbol)
+    public Task<MarketData> GetMarketData(string symbol)
     {
-        var price = await GetMarketPrice(symbol);
-        return new MarketData
+        var price = GetCurrentPrice(symbol);
+        return Task.FromResult(new MarketData
         {
             Symbol = symbol,
             Timestamp = DateTime.UtcNow,
@@ -103,11 +106,86 @@ public class TradovateAdapter : IExchangeAdapter, IDisposable
             High = price * 1.001m,
             Low = price * 0.999m,
             Close = price,
-            Volume = 1000m
-        };
+            Volume = 1000m,
+            BidPrice = price * 0.9995m,
+            AskPrice = price * 1.0005m,
+            NumberOfTrades = 100
+        });
     }
 
-    private async Task<decimal> GetMarketPrice(string symbol)
+    public IEnumerable<string> GetActiveSymbols()
+    {
+        return _lastPrices.Keys;
+    }
+
+    public Task<MarketData?> GetLatestPrice(string symbol)
+    {
+        return GetMarketData(symbol);
+    }
+
+    public Task<IEnumerable<MarketData>> GetHistoricalData(string symbol, DateTime startTime, DateTime endTime, TimeFrame timeFrame)
+    {
+        // For demo purposes, generate some historical data
+        var data = new List<MarketData>();
+        var currentPrice = GetCurrentPrice(symbol);
+        var currentTime = startTime;
+
+        while (currentTime <= endTime)
+        {
+            var random = new Random();
+            var change = (decimal)(random.NextDouble() * 0.02 - 0.01);
+            currentPrice *= (1 + change);
+
+            data.Add(new MarketData
+            {
+                Symbol = symbol,
+                Timestamp = currentTime,
+                Open = currentPrice,
+                High = currentPrice * 1.005m,
+                Low = currentPrice * 0.995m,
+                Close = currentPrice,
+                Volume = random.Next(100, 1000),
+                NumberOfTrades = random.Next(10, 100)
+            });
+
+            currentTime = timeFrame switch
+            {
+                TimeFrame.Minute => currentTime.AddMinutes(1),
+                TimeFrame.Hour => currentTime.AddHours(1),
+                TimeFrame.Day => currentTime.AddDays(1),
+                TimeFrame.Week => currentTime.AddDays(7),
+                TimeFrame.Month => currentTime.AddMonths(1),
+                _ => currentTime.AddMinutes(1)
+            };
+        }
+
+        return Task.FromResult<IEnumerable<MarketData>>(data);
+    }
+
+    public void SubscribeToSymbol(string symbol)
+    {
+        if (!_lastPrices.ContainsKey(symbol))
+        {
+            _lastPrices[symbol] = 100m; // Default starting price
+        }
+        _logger.LogInformation("Subscribed to {Symbol}", symbol);
+    }
+
+    public void UnsubscribeFromSymbol(string symbol)
+    {
+        _logger.LogInformation("Unsubscribed from {Symbol}", symbol);
+    }
+
+    public OrderBookLevel[] GetOrderBook(string symbol)
+    {
+        if (!_orderBooks.ContainsKey(symbol))
+        {
+            GenerateOrderBook(symbol);
+        }
+        return _orderBooks[symbol].ToArray();
+    }
+
+    private decimal GetCurrentPrice(string symbol)
     {
         if (!_lastPrices.ContainsKey(symbol))
         {
@@ -122,73 +200,50 @@ public class TradovateAdapter : IExchangeAdapter, IDisposable
         return _lastPrices[symbol];
     }
 
-    private void ConnectWebSocket()
+    private void GenerateOrderBook(string symbol)
     {
-        try
-        {
-            _webSocket.Open();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"WebSocket connection error: {ex.Message}");
-        }
-    }
+        var orderBook = new List<OrderBookLevel>();
+        var basePrice = GetCurrentPrice(symbol);
+        var now = DateTime.UtcNow;
+        var random = new Random();
 
-    private void WebSocket_Opened(object? sender, EventArgs e)
-    {
-        var authMessage = new
+        // Generate bid levels
+        for (int i = 1; i <= 10; i++)
         {
-            action = "auth",
-            key = _config.ApiKey,
-            secret = _config.ApiSecret
-        };
-
-        _webSocket.Send(JsonConvert.SerializeObject(authMessage));
-    }
-
-    private void WebSocket_MessageReceived(object? sender, MessageReceivedEventArgs e)
-    {
-        try
-        {
-            var data = JsonConvert.DeserializeObject<dynamic>(e.Message);
-            var messageType = (string)data.type;
-
-            switch (messageType)
+            orderBook.Add(new OrderBookLevel
             {
-                case "price":
-                    var symbol = (string)data.symbol;
-                    var price = (decimal)data.price;
-                    _lastPrices[symbol] = price;
-                    break;
-
-                case "order":
-                    // Handle order updates
-                    break;
-
-                case "error":
-                    Console.WriteLine($"WebSocket error: {data.message}");
-                    break;
-            }
+                Price = basePrice * (1 - i * 0.001m),
+                Size = random.Next(1, 10),
+                OrderCount = random.Next(1, 5),
+                IsBid = true,
+                Timestamp = now
+            });
         }
-        catch (Exception ex)
+
+        // Generate ask levels
+        for (int i = 1; i <= 10; i++)
         {
-            Console.WriteLine($"Error processing WebSocket message: {ex.Message}");
+            orderBook.Add(new OrderBookLevel
+            {
+                Price = basePrice * (1 + i * 0.001m),
+                Size = random.Next(1, 10),
+                OrderCount = random.Next(1, 5),
+                IsBid = false,
+                Timestamp = now
+            });
         }
+
+        _orderBooks[symbol] = orderBook;
     }
 
-    private void WebSocket_Error(object? sender, SuperSocket.ClientEngine.ErrorEventArgs e)
+    private void InitializeTestData()
     {
-        Console.WriteLine($"WebSocket error: {e.Exception.Message}");
-    }
-
-    private void WebSocket_Closed(object? sender, EventArgs e)
-    {
-        Console.WriteLine("WebSocket connection closed. Attempting to reconnect...");
-        Task.Delay(5000).ContinueWith(_ => ConnectWebSocket());
-    }
-
-    public void Dispose()
-    {
-        _webSocket?.Dispose();
+        var symbols = new[] { "ES", "NQ", "CL", "GC" }; // Common futures symbols
+        foreach (var symbol in symbols)
+        {
+            _lastPrices[symbol] = new Random().Next(1000, 50000);
+            GenerateOrderBook(symbol);
+            _logger.LogInformation("Initialized test data for {Symbol}", symbol);
+        }
     }
 }

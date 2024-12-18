@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using TradingSystem.Core.Configuration;
 
 namespace TradingSystem.Core.Monitoring.Auth;
@@ -14,11 +15,11 @@ public class HealthCheckAuthRequirement : IAuthorizationRequirement
     }
 }
 
-public class HealthCheckAuthHandler : AuthorizationHandler<HealthCheckAuthRequirement>
+public class HealthCheckAuthorizationHandler : AuthorizationHandler<HealthCheckAuthRequirement>
 {
     private readonly MonitoringConfig _config;
 
-    public HealthCheckAuthHandler(IOptions<MonitoringConfig> config)
+    public HealthCheckAuthorizationHandler(IOptions<MonitoringConfig> config)
     {
         _config = config.Value;
     }
@@ -38,7 +39,9 @@ public class HealthCheckAuthHandler : AuthorizationHandler<HealthCheckAuthRequir
         switch (requirement.PolicyName)
         {
             case HealthCheckPolicies.ViewHealthChecks:
-                if (user.Identity?.IsAuthenticated == true)
+                if (user.Identity?.IsAuthenticated == true &&
+                    (user.IsInRole(HealthCheckAuthorizationDefaults.ViewerRole) ||
+                     user.IsInRole(HealthCheckAuthorizationDefaults.AdminRole)))
                 {
                     context.Succeed(requirement);
                 }
@@ -46,7 +49,7 @@ public class HealthCheckAuthHandler : AuthorizationHandler<HealthCheckAuthRequir
 
             case HealthCheckPolicies.ManageHealthChecks:
             case HealthCheckPolicies.TestNotifications:
-                if (user.IsInRole("HealthCheckAdmin"))
+                if (user.IsInRole(HealthCheckAuthorizationDefaults.AdminRole))
                 {
                     context.Succeed(requirement);
                 }
@@ -69,11 +72,17 @@ public static class HealthCheckAuthPolicyExtensions
 
         options.AddPolicy(HealthCheckPolicies.TestNotifications, policy =>
             policy.Requirements.Add(new HealthCheckAuthRequirement(HealthCheckPolicies.TestNotifications)));
+
+        options.AddPolicy(HealthCheckAuthorizationDefaults.ViewerPolicy, policy =>
+            policy.RequireRole(HealthCheckAuthorizationDefaults.ViewerRole, HealthCheckAuthorizationDefaults.AdminRole));
+
+        options.AddPolicy(HealthCheckAuthorizationDefaults.AdminPolicy, policy =>
+            policy.RequireRole(HealthCheckAuthorizationDefaults.AdminRole));
     }
 
     public static IServiceCollection AddHealthCheckPolicyServices(this IServiceCollection services)
     {
-        services.AddScoped<IAuthorizationHandler, HealthCheckAuthHandler>();
+        services.AddScoped<IAuthorizationHandler, HealthCheckAuthorizationHandler>();
         
         services.AddAuthorization(options =>
         {
@@ -82,13 +91,6 @@ public static class HealthCheckAuthPolicyExtensions
 
         return services;
     }
-}
-
-public static class HealthCheckAuthorizationDefaults
-{
-    public const string AuthenticationScheme = "HealthCheckAuth";
-    public const string AdminRole = "HealthCheckAdmin";
-    public const string ViewerRole = "HealthCheckViewer";
 }
 
 public class HealthCheckAuthorizationOptions

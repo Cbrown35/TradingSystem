@@ -4,23 +4,14 @@ namespace TradingSystem.Common.Interfaces;
 
 public interface IMarketDataService
 {
-    /// <summary>
-    /// Gets the current market data for a symbol
-    /// </summary>
-    Task<MarketData> GetMarketData(string symbol);
-
-    /// <summary>
-    /// Gets historical market data for a symbol within a date range
-    /// </summary>
-    Task<List<MarketData>> GetHistoricalData(string symbol, DateTime startDate, DateTime endDate);
-
-    /// <summary>
-    /// Gets current prices for multiple symbols
-    /// </summary>
-    Task<Dictionary<string, decimal>> GetCurrentPrices(List<string> symbols);
-
-    /// <summary>
-    /// Gets comprehensive market statistics for multiple symbols over a specified period
-    /// </summary>
-    Task<Dictionary<string, MarketStatistics>> GetMarketStatistics(List<string> symbols, TimeSpan period);
+    Task<IEnumerable<string>> GetActiveSymbolsAsync();
+    Task<MarketData?> GetLatestMarketDataAsync(string symbol);
+    Task<IEnumerable<MarketData>> GetHistoricalDataAsync(string symbol, DateTime startTime, DateTime endTime, TimeFrame timeFrame);
+    Task<IEnumerable<MarketData>> GetRealtimeDataAsync(string symbol, TimeFrame timeFrame);
+    void SubscribeToMarketDataAsync(string symbol, TimeFrame timeFrame, Action<MarketData> callback);
+    void UnsubscribeFromMarketDataAsync(string symbol, TimeFrame timeFrame);
+    Task<MarketStatistics> GetMarketStatisticsAsync(string symbol, DateTime startTime, DateTime endTime);
+    Task<LiquidityMetrics> GetLiquidityMetricsAsync(string symbol);
+    Task<Dictionary<string, decimal>> GetCurrentPricesAsync(IEnumerable<string> symbols);
+    Task<IEnumerable<MarketData>> GetAggregatedDataAsync(string symbol, TimeFrame timeFrame, DateTime startTime, DateTime endTime);
 }

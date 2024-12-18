@@ -96,13 +96,16 @@ public class PineScriptGenerator
 
         foreach (var condition in signal.Conditions)
         {
+            // Parse the expression to get operands
+            var parts = ParseExpression(condition.Expression);
+            
             var conditionStr = condition.Type switch
             {
-                ConditionType.CrossOver => $"ta.crossover({condition.LeftOperand}, {condition.RightOperand})",
-                ConditionType.CrossUnder => $"ta.crossunder({condition.LeftOperand}, {condition.RightOperand})",
-                ConditionType.GreaterThan => $"{condition.LeftOperand} > {condition.RightOperand}",
-                ConditionType.LessThan => $"{condition.LeftOperand} < {condition.RightOperand}",
-                ConditionType.Equals => $"{condition.LeftOperand} == {condition.RightOperand}",
+                SignalConditionType.CrossOver => $"ta.crossover({parts.leftOperand}, {parts.rightOperand})",
+                SignalConditionType.CrossUnder => $"ta.crossunder({parts.leftOperand}, {parts.rightOperand})",
+                SignalConditionType.PriceAbove => $"{parts.leftOperand} > {parts.rightOperand}",
+                SignalConditionType.PriceBelow => $"{parts.leftOperand} < {parts.rightOperand}",
+                SignalConditionType.Custom => condition.Expression,
                 _ => throw new ArgumentException($"Unsupported condition type: {condition.Type}")
             };
             conditions.Add(conditionStr);
@@ -110,5 +113,20 @@ public class PineScriptGenerator
 
         var conditionName = signal.Name.ToLower() + "Condition";
         return $"{conditionName} = {string.Join(" and ", conditions)}";
+    }
+
+    private (string leftOperand, string rightOperand) ParseExpression(string expression)
+    {
+        // Split on common operators
+        var parts = expression.Split(new[] { " > ", " < ", " >= ", " <= ", " == ", " crosses above ", " crosses below " }, 
+            StringSplitOptions.RemoveEmptyEntries);
+
+        if (parts.Length != 2)
+        {
+            // If we can't parse it, return the whole expression as the left operand
+            return (expression.Trim(), "0");
+        }
+
+        return (parts[0].Trim(), parts[1].Trim());
     }
 }
