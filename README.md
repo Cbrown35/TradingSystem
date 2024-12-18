@@ -1,4 +1,4 @@
-# Algorithmic Trading System
+# Algorithmic Trading System {BETA}
 
 A comprehensive algorithmic trading system built with .NET 8, designed for developing, testing, and executing trading strategies across multiple markets.
 
