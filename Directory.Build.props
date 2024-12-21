@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Remove old Rx packages -->
+  <ItemGroup>
+    <PackageReference Remove="Rx-Core" />
+    <PackageReference Remove="Rx-Interfaces" />
+    <PackageReference Remove="Rx-Linq" />
+    <PackageReference Remove="Rx-Main" />
+    <PackageReference Remove="Rx-PlatformServices" />
+  </ItemGroup>
+</Project>
