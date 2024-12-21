@@ -2,116 +2,46 @@
 .git
 .gitignore
 .gitattributes
-.github
 
-# Development
+# IDE
+.vs
+.vscode
 *.user
 *.userosscache
 *.sln.docstates
-.vs/
-.vscode/
-_ReSharper*/
-*.resharper
-[Tt]humbs.db
-
-# Build results
-[Dd]ebug/
-[Dd]ebugPublic/
-[Rr]elease/
-[Rr]eleases/
-x64/
-x86/
-build/
-bld/
-[Bb]in/
-[Oo]bj/
-[Oo]ut/
-msbuild.log
-msbuild.err
-msbuild.wrn
 
 # Test Results
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
 
-# NuGet
-*.nupkg
-**/packages/*
-!**/packages/build/
-*.nuget.props
-*.nuget.targets
+# Docker
+.docker
 
-# User-specific files
-*.rsuser
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
+# Secrets and configs (except templates)
+secrets.json
+*.key
+*.pem
+*.pfx
+*.p12
+appsettings.*.json
+!appsettings.template.json
 
 # Logs
 logs/
 *.log
 
-# Environment files
-.env
-.env.local
-.env.*.local
-appsettings.*.json
-!appsettings.json
-!appsettings.Example.json
-
-# Trading system specific
-backtest-results/
-optimization-results/
-market-data/
-trading-logs/
-strategy-configs/
-*.key
-*.pem
-*.pfx
-*.p12
-credentials.json
-secrets.json
-
-# Documentation
-README.md
-CHANGELOG.md
-LICENSE
-CONTRIBUTING.md
-CODE_OF_CONDUCT.md
-SECURITY.md
-
-# Docker
-Dockerfile*
-docker-compose*
-.dockerignore
-
-# IDE
-.idea/
-*.swp
-*.swo
-*~
-
 # Runtime data
 data/
-logs/
-config/
+*.pid
+*.seed
+*.pid.lock
 
-# Temporary files
-*.tmp
-*.temp
-*.bak
+# Node
+node_modules/
+npm-debug.log*
 
-# OS generated files
+# Misc
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
+*.swp
+*.bak
 Thumbs.db
-
-# Coverage reports
-coverage/
-*.coverage
-*.coveragexml

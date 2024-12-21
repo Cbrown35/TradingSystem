@@ -3,10 +3,8 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Prometheus;
-using TradingSystem.Core.Monitoring;
-using TradingSystem.Core.Monitoring.Auth;
-using TradingSystem.Core.Monitoring.Middleware;
 using TradingSystem.Core.Configuration;
 using TradingSystem.Infrastructure;
 using TradingSystem.Infrastructure.Data;
@@ -25,18 +23,23 @@ var monitoringConfig = builder.Configuration
     .GetSection("Monitoring")
     .Get<MonitoringConfig>() ?? new MonitoringConfig();
 
-builder.Services.Configure<MonitoringConfig>(
-    builder.Configuration.GetSection("Monitoring"));
+// Configure caching
+builder.Services.AddMemoryCache();
+builder.Services.AddDistributedMemoryCache();
 
-// Add health checks
-builder.Services.AddHealthChecking(options =>
-{
-    options.HealthChecks = monitoringConfig.HealthChecks;
-});
+// Add ASP.NET Core health checks
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<TradingContext>("Database")
+    .AddCheck("self", () => HealthCheckResult.Healthy());
 
 // Add health checks UI
-builder.Services.AddHealthChecksUI()
-    .AddInMemoryStorage();
+builder.Services.AddHealthChecksUI(setup =>
+{
+    setup.SetEvaluationTimeInSeconds(15);
+    setup.MaximumHistoryEntriesPerEndpoint(50);
+    setup.AddHealthCheckEndpoint("Trading System", "/healthz");
+})
+.AddInMemoryStorage();
 
 // Add infrastructure services
 builder.Services.AddDbContext<TradingContext>(options =>
@@ -65,47 +68,18 @@ if (monitoringConfig.HealthChecks.UI.Authentication.Enabled)
     app.UseAuthorization();
 }
 
-// Define health check response writer
-static Task HealthCheckResponseWriter(HttpContext context, HealthReport report)
-{
-    context.Response.ContentType = "application/json";
-    return UIResponseWriter.WriteHealthCheckUIResponse(context, report);
-}
-
-// Map health check endpoints
-app.MapHealthChecks("/health", new HealthCheckOptions
+// Map health check endpoints with unique paths
+app.MapHealthChecks("/healthz", new HealthCheckOptions
 {
     Predicate = _ => true,
-    AllowCachingResponses = false,
-    ResponseWriter = HealthCheckResponseWriter
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
 
-app.MapHealthChecks("/health/ready", new HealthCheckOptions
+// Map health checks UI with unique paths
+app.MapHealthChecksUI(options =>
 {
-    Predicate = check => check.Tags.Contains("ready"),
-    AllowCachingResponses = false,
-    ResponseWriter = HealthCheckResponseWriter
-});
-
-app.MapHealthChecks("/health/live", new HealthCheckOptions
-{
-    Predicate = check => !check.Tags.Contains("ready"),
-    AllowCachingResponses = false,
-    ResponseWriter = HealthCheckResponseWriter
-});
-
-// Map health checks UI
-app.UseHealthChecksUI(config =>
-{
-    config.UIPath = "/healthchecks-ui";
-    config.ApiPath = "/healthchecks-api";
-});
-
-// Enable prometheus metrics
-app.UseMetricServer();
-app.UseHttpMetrics(options => 
-{
-    options.AddCustomLabel("app", _ => "trading_system");
+    options.UIPath = "/healthz-ui";
+    options.ApiPath = "/healthz-api";
 });
 
 app.MapControllers();

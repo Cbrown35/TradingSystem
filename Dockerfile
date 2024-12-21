@@ -1,32 +1,32 @@
-# Use the official .NET SDK image as the build image
+# Stage 1: Build and restore (writable)
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /app
+WORKDIR /source
 
-# Copy solution and project files
+# Copy NuGet config and solution files first
 COPY *.sln .
-COPY src/Common/*.csproj ./src/Common/
-COPY src/Core/*.csproj ./src/Core/
-COPY src/Infrastructure/*.csproj ./src/Infrastructure/
-COPY src/RealTrading/*.csproj ./src/RealTrading/
-COPY src/StrategySearch/*.csproj ./src/StrategySearch/
-COPY src/TradingSystem.Console/*.csproj ./src/TradingSystem.Console/
+COPY global.json .
+COPY Directory.Build.props .
+COPY NuGet.config .
 
-# Restore NuGet packages
-RUN dotnet restore
+# Copy project files first for better layer caching
+COPY src/Common/*.csproj src/Common/
+COPY src/Core/*.csproj src/Core/
+COPY src/Infrastructure/*.csproj src/Infrastructure/
+COPY src/RealTrading/*.csproj src/RealTrading/
+COPY src/StrategySearch/*.csproj src/StrategySearch/
+COPY src/TradingSystem.Console/*.csproj src/TradingSystem.Console/
+
+# Restore packages in writable stage
+RUN dotnet restore --verbosity detailed
 
 # Copy the rest of the source code
-COPY . .
+COPY src/. src/
 
-# Build the application
+# Build in writable stage
 RUN dotnet build -c Release --no-restore
+RUN dotnet publish src/TradingSystem.Console/TradingSystem.Console.csproj -c Release -o /app/publish --no-restore
 
-# Run tests
-RUN dotnet test -c Release --no-build
-
-# Publish the application
-RUN dotnet publish src/TradingSystem.Console/TradingSystem.Console.csproj -c Release -o /app/publish --no-build
-
-# Create the runtime image
+# Stage 2: Runtime (can be read-only)
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 

@@ -12,13 +12,10 @@ services:
       - redis
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ConnectionStrings__DefaultConnection=Host=postgres;Database=tradingsystem;Username=postgres;Password=postgres
-      - Redis__ConnectionString=redis:6379
-      - Logging__LogLevel__Default=Information
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./config:/app/config
+      - ./config:/app/config:ro
     ports:
       - "5000:80"
     networks:
@@ -30,21 +27,27 @@ services:
       retries: 3
 
   postgres:
-    image: postgres:14
-    container_name: trading-postgres
+    image: timescale/timescaledb:latest-pg14
+    container_name: trading-timescaledb
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=tradingsystem
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=${DB_NAME:-tradingsystem}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      # TimescaleDB specific settings
+      - TIMESCALEDB_TUNE=true
+      - TIMESCALEDB_TUNE_MAX_CONNS=100
+      - TIMESCALEDB_TUNE_MEMORY=1GB
+      - TIMESCALEDB_TUNE_CPU=2
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-timescaledb.sql:/docker-entrypoint-initdb.d/init-timescaledb.sql:ro
     ports:
       - "5432:5432"
     networks:
       - trading-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -53,7 +56,7 @@ services:
     image: redis:alpine
     container_name: trading-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
     volumes:
       - redis-data:/data
     ports:
@@ -61,7 +64,7 @@ services:
     networks:
       - trading-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -71,8 +74,8 @@ services:
     container_name: trading-pgadmin
     restart: unless-stopped
     environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@tradingsystem.com
-      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
     volumes:
       - pgadmin-data:/var/lib/pgadmin
     ports:

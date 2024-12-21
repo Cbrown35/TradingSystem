@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using TradingSystem.Common.Models;
 
 namespace TradingSystem.Infrastructure.Data;
@@ -13,9 +14,80 @@ public class TradingContext : DbContext
     public DbSet<Theory> Theories { get; set; } = null!;
     public DbSet<MarketData> MarketData { get; set; } = null!;
     public DbSet<Order> Orders { get; set; } = null!;
+    public DbSet<Indicator> Indicators { get; set; } = null!;
+    public DbSet<Signal> Signals { get; set; } = null!;
+    public DbSet<SignalCondition> SignalConditions { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Signal>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.Expression).HasMaxLength(1000);
+            
+            entity.Property(e => e.ParametersJson)
+                .HasColumnType("jsonb")
+                .HasDefaultValue("{}");
+            
+            entity.Property(e => e.MetricsJson)
+                .HasColumnType("jsonb")
+                .HasDefaultValue("{}");
+
+            entity.HasMany(e => e.Conditions)
+                .WithOne()
+                .HasForeignKey(e => e.SignalId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Ignore(e => e.Parameters);
+            entity.Ignore(e => e.Metrics);
+        });
+
+        modelBuilder.Entity<SignalCondition>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Expression).HasMaxLength(1000);
+            entity.Property(e => e.SignalId).IsRequired();
+            
+            entity.Property(e => e.ParametersJson)
+                .HasColumnType("jsonb")
+                .HasDefaultValue("{}");
+
+            entity.Ignore(e => e.Parameters);
+        });
+
+        modelBuilder.Entity<Indicator>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            
+            entity.Property(e => e.ParametersJson)
+                .HasColumnType("jsonb")
+                .HasDefaultValue("{}");
+            
+            entity.Property(e => e.ValuesJson)
+                .HasColumnType("jsonb")
+                .HasDefaultValue("{}");
+            
+            entity.Property(e => e.SettingsJson)
+                .HasColumnType("jsonb")
+                .HasDefaultValue("{}");
+            
+            entity.Property(e => e.DependenciesJson)
+                .HasColumnType("jsonb")
+                .HasDefaultValue("[]");
+
+            entity.Ignore(e => e.Parameters);
+            entity.Ignore(e => e.Values);
+            entity.Ignore(e => e.Settings);
+            entity.Ignore(e => e.Dependencies);
+
+            entity.HasIndex(e => e.Name);
+            entity.HasIndex(e => e.Type);
+        });
+
         modelBuilder.Entity<Trade>(entity =>
         {
             entity.HasKey(e => e.Id);
