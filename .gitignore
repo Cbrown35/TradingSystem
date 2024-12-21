@@ -238,3 +238,4 @@ _pkginfo.txt
 # Visual Studio cache files
 *.cachefile
 *.VC.VC.opendb
+sdk-*-installer
