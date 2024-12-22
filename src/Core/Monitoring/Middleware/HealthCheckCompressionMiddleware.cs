@@ -1,5 +1,8 @@
 using System.IO.Compression;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TradingSystem.Core.Configuration;
 
@@ -41,8 +44,8 @@ public class HealthCheckCompressionMiddleware
         var originalBody = context.Response.Body;
         using var compressionStream = CreateCompressionStream(compressionType, originalBody);
         context.Response.Body = compressionStream;
-        context.Response.Headers.Add("Content-Encoding", GetEncodingName(compressionType));
-        context.Response.Headers.Add("Vary", "Accept-Encoding");
+        context.Response.Headers.Append("Content-Encoding", GetEncodingName(compressionType));
+        context.Response.Headers.Append("Vary", "Accept-Encoding");
 
         try
         {

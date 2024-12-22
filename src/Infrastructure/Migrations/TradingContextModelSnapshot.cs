@@ -199,13 +199,17 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Symbol", "Timestamp");
 
-                    b.HasIndex("Interval");
-
                     b.HasIndex("MarketCondition");
 
-                    b.HasIndex("Timestamp");
+                    b.HasIndex("Timestamp")
+                        .IsDescending()
+                        .HasDatabaseName("ix_market_data_timestamp_desc");
 
-                    b.HasIndex("Symbol", "Timestamp");
+                    b.HasIndex("Symbol", "Timestamp")
+                        .HasDatabaseName("ix_market_data_symbol_timestamp");
+
+                    b.HasIndex("Symbol", "Interval", "Timestamp")
+                        .HasDatabaseName("ix_market_data_symbol_interval_timestamp");
 
                     b.ToTable("MarketData");
                 });
@@ -331,7 +335,9 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("ClientOrderId");
 
-                    b.HasIndex("CreateTime");
+                    b.HasIndex("CreateTime")
+                        .IsDescending()
+                        .HasDatabaseName("ix_orders_create_time_desc");
 
                     b.HasIndex("ExchangeOrderId");
 
@@ -339,9 +345,10 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("StrategyName");
 
-                    b.HasIndex("Symbol");
-
                     b.HasIndex("TradeId");
+
+                    b.HasIndex("Symbol", "CreateTime")
+                        .HasDatabaseName("ix_orders_symbol_create_time");
 
                     b.ToTable("Orders");
                 });
@@ -562,9 +569,13 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CloseTime");
+                    b.HasIndex("CloseTime")
+                        .IsDescending()
+                        .HasDatabaseName("ix_trades_close_time_desc");
 
-                    b.HasIndex("OpenTime");
+                    b.HasIndex("OpenTime")
+                        .IsDescending()
+                        .HasDatabaseName("ix_trades_open_time_desc");
 
                     b.HasIndex("ParentTradeId");
 
@@ -572,7 +583,8 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("StrategyName");
 
-                    b.HasIndex("Symbol");
+                    b.HasIndex("Symbol", "OpenTime")
+                        .HasDatabaseName("ix_trades_symbol_open_time");
 
                     b.ToTable("Trades");
                 });

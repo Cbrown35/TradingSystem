@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace TradingSystem.Infrastructure.Data;
 
@@ -52,8 +53,11 @@ public static class DatabaseFactory
             // Ensure database is created
             await context.Database.EnsureCreatedAsync();
 
-            // Set default schema
-            await context.Database.ExecuteSqlRawAsync($"SET search_path TO {config.Schema};");
+            // Enable TimescaleDB extension
+            await context.Database.ExecuteSqlRawAsync("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;");
+
+            // Create hypertables and continuous aggregates
+            await context.CreateHypertablesAsync();
 
             // Additional initialization if needed
             await InitializeDefaultDataAsync(context, logger);
@@ -121,9 +125,24 @@ public static class DatabaseFactory
             var canConnect = await context.Database.CanConnectAsync();
             
             if (canConnect)
-                logger.LogInformation("Successfully connected to the database.");
+            {
+                // Verify TimescaleDB extension
+                var hasTimescaleDB = await context.Database
+                    .SqlQuery<bool>($"SELECT COUNT(*) > 0 FROM pg_extension WHERE extname = 'timescaledb';")
+                    .SingleOrDefaultAsync();
+
+                if (!hasTimescaleDB)
+                {
+                    logger.LogWarning("TimescaleDB extension is not installed.");
+                    return false;
+                }
+
+                logger.LogInformation("Successfully connected to the database with TimescaleDB.");
+            }
             else
+            {
                 logger.LogWarning("Could not connect to the database.");
+            }
 
             return canConnect;
         }
@@ -146,11 +165,28 @@ public static class DatabaseFactory
         {
             logger.LogInformation("Starting database backup...");
             
-            // Execute pg_dump command through npgsql
-            var connectionString = context.Database.GetConnectionString();
-            var backupCommand = $"pg_dump -Fc \"{connectionString}\" > \"{backupPath}\"";
-            
-            await context.Database.ExecuteSqlRawAsync(backupCommand);
+            // Use Process to execute pg_dump with TimescaleDB support
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pg_dump",
+                Arguments = $"-Fc --no-owner --no-acl \"{context.Database.GetConnectionString()}\" -f \"{backupPath}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null)
+            {
+                throw new Exception("Failed to start pg_dump process");
+            }
+
+            await process.WaitForExitAsync();
+            if (process.ExitCode != 0)
+            {
+                var error = await process.StandardError.ReadToEndAsync();
+                throw new Exception($"pg_dump failed with exit code {process.ExitCode}: {error}");
+            }
             
             logger.LogInformation("Database backup completed successfully.");
         }
@@ -177,11 +213,34 @@ public static class DatabaseFactory
             await context.Database.EnsureDeletedAsync();
             await context.Database.EnsureCreatedAsync();
 
-            // Execute pg_restore command through npgsql
-            var connectionString = context.Database.GetConnectionString();
-            var restoreCommand = $"pg_restore -d \"{connectionString}\" \"{backupPath}\"";
+            // Enable TimescaleDB extension before restore
+            await context.Database.ExecuteSqlRawAsync("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;");
+
+            // Use Process to execute pg_restore
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pg_restore",
+                Arguments = $"-d \"{context.Database.GetConnectionString()}\" --no-owner --no-acl \"{backupPath}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null)
+            {
+                throw new Exception("Failed to start pg_restore process");
+            }
+
+            await process.WaitForExitAsync();
+            if (process.ExitCode != 0)
+            {
+                var error = await process.StandardError.ReadToEndAsync();
+                throw new Exception($"pg_restore failed with exit code {process.ExitCode}: {error}");
+            }
             
-            await context.Database.ExecuteSqlRawAsync(restoreCommand);
+            // Recreate hypertables after restore
+            await context.CreateHypertablesAsync();
             
             logger.LogInformation("Database restore completed successfully.");
         }

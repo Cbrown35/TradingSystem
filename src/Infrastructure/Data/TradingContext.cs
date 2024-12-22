@@ -120,11 +120,17 @@ public class TradingContext : DbContext
                 .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            entity.HasIndex(e => e.Symbol);
-            entity.HasIndex(e => e.StrategyName);
+            // TimescaleDB time-series indexes
+            entity.HasIndex(e => e.OpenTime)
+                .HasDatabaseName("ix_trades_open_time_desc")
+                .IsDescending();
+            entity.HasIndex(e => e.CloseTime)
+                .HasDatabaseName("ix_trades_close_time_desc")
+                .IsDescending();
+            entity.HasIndex(e => new { e.Symbol, e.OpenTime })
+                .HasDatabaseName("ix_trades_symbol_open_time");
             entity.HasIndex(e => e.Status);
-            entity.HasIndex(e => e.OpenTime);
-            entity.HasIndex(e => e.CloseTime);
+            entity.HasIndex(e => e.StrategyName);
         });
 
         modelBuilder.Entity<MarketData>(entity =>
@@ -157,9 +163,14 @@ public class TradingContext : DbContext
             entity.Property(e => e.OrderBook).HasColumnType("jsonb");
             entity.Property(e => e.RecentTrades).HasColumnType("jsonb");
 
-            entity.HasIndex(e => new { e.Symbol, e.Timestamp });
-            entity.HasIndex(e => e.Timestamp);
-            entity.HasIndex(e => e.Interval);
+            // TimescaleDB time-series indexes
+            entity.HasIndex(e => e.Timestamp)
+                .HasDatabaseName("ix_market_data_timestamp_desc")
+                .IsDescending();
+            entity.HasIndex(e => new { e.Symbol, e.Timestamp })
+                .HasDatabaseName("ix_market_data_symbol_timestamp");
+            entity.HasIndex(e => new { e.Symbol, e.Interval, e.Timestamp })
+                .HasDatabaseName("ix_market_data_symbol_interval_timestamp");
             entity.HasIndex(e => e.MarketCondition);
         });
 
@@ -186,8 +197,12 @@ public class TradingContext : DbContext
 
             entity.Property(e => e.Tags).HasColumnType("jsonb");
 
-            entity.HasIndex(e => e.Symbol);
-            entity.HasIndex(e => e.CreateTime);
+            // TimescaleDB time-series indexes
+            entity.HasIndex(e => e.CreateTime)
+                .HasDatabaseName("ix_orders_create_time_desc")
+                .IsDescending();
+            entity.HasIndex(e => new { e.Symbol, e.CreateTime })
+                .HasDatabaseName("ix_orders_symbol_create_time");
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.ClientOrderId);
             entity.HasIndex(e => e.ExchangeOrderId);
@@ -205,5 +220,56 @@ public class TradingContext : DbContext
         });
 
         base.OnModelCreating(modelBuilder);
+    }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        base.OnConfiguring(optionsBuilder);
+
+        // Enable TimescaleDB extension if not already enabled
+        optionsBuilder.UseNpgsql(options => 
+        {
+            options.EnableRetryOnFailure();
+            options.CommandTimeout(60);
+        });
+    }
+
+    public async Task CreateHypertablesAsync()
+    {
+        // Create hypertables for time-series data
+        await Database.ExecuteSqlRawAsync(@"
+            SELECT create_hypertable('MarketData', 'Timestamp', 
+                chunk_time_interval => INTERVAL '1 day',
+                if_not_exists => TRUE);
+            
+            SELECT create_hypertable('Trades', 'OpenTime',
+                chunk_time_interval => INTERVAL '1 day',
+                if_not_exists => TRUE);
+            
+            SELECT create_hypertable('Orders', 'CreateTime',
+                chunk_time_interval => INTERVAL '1 day',
+                if_not_exists => TRUE);
+        ");
+
+        // Create continuous aggregates for different time intervals
+        await Database.ExecuteSqlRawAsync(@"
+            CREATE MATERIALIZED VIEW IF NOT EXISTS market_data_1h
+            WITH (timescaledb.continuous) AS
+            SELECT time_bucket('1 hour', ""Timestamp"") AS bucket,
+                   ""Symbol"",
+                   first(""Open"", ""Timestamp"") AS open,
+                   max(""High"") AS high,
+                   min(""Low"") AS low,
+                   last(""Close"", ""Timestamp"") AS close,
+                   sum(""Volume"") AS volume
+            FROM ""MarketData""
+            GROUP BY bucket, ""Symbol""
+            WITH NO DATA;
+
+            SELECT add_continuous_aggregate_policy('market_data_1h',
+                start_offset => INTERVAL '1 month',
+                end_offset => INTERVAL '1 hour',
+                schedule_interval => INTERVAL '1 hour');
+        ");
     }
 }
