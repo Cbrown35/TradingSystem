@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging.Console;
+using Microsoft.Extensions.Logging.Debug;
 using TradingSystem.Common.Interfaces;
+using TradingSystem.Common.Models;  // Added for Theory class
 using TradingSystem.Infrastructure.Data;
 using TradingSystem.Infrastructure.Repositories;
 
@@ -106,9 +110,20 @@ public static class DependencyInjection
         using var scope = serviceProvider.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<TradingContext>();
 
-        // Add any seeding logic here
+        // Add seeding logic here
         // For example:
-        // await SeedDefaultDataAsync(context);
+        if (!await context.Set<Theory>().AnyAsync())
+        {
+            // Add default theories
+            await context.Set<Theory>().AddRangeAsync(GetDefaultTheories());
+            await context.SaveChangesAsync();
+        }
+    }
+
+    private static IEnumerable<Theory> GetDefaultTheories()
+    {
+        // Return default theories
+        return new List<Theory>();
     }
 
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services)

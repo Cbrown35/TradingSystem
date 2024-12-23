@@ -1,38 +1,43 @@
-# Use the official .NET SDK image as the build image
+# Stage 1: Build and restore
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /app
+WORKDIR /source
 
-# Copy solution and project files
+# Copy just the .csproj files first to allow Docker caching of restore
 COPY *.sln .
-COPY src/Common/*.csproj ./src/Common/
-COPY src/Core/*.csproj ./src/Core/
-COPY src/Infrastructure/*.csproj ./src/Infrastructure/
-COPY src/RealTrading/*.csproj ./src/RealTrading/
-COPY src/StrategySearch/*.csproj ./src/StrategySearch/
-COPY src/TradingSystem.Console/*.csproj ./src/TradingSystem.Console/
+COPY global.json .
+COPY Directory.Build.props .
+COPY Directory.Packages.props .
+COPY NuGet.config .
+COPY src/Common/*.csproj src/Common/
+COPY src/Core/*.csproj src/Core/
+COPY src/Infrastructure/*.csproj src/Infrastructure/
+COPY src/RealTrading/*.csproj src/RealTrading/
+COPY src/StrategySearch/*.csproj src/StrategySearch/
+COPY src/TradingSystem.Console/*.csproj src/TradingSystem.Console/
 
-# Restore NuGet packages
+# Clear NuGet package cache and restore packages
+RUN dotnet nuget locals all --clear
 RUN dotnet restore
 
-# Copy the rest of the source code
-COPY . .
+# Now copy the rest of the code
+COPY src/. src/
 
-# Build the application
-RUN dotnet build -c Release --no-restore
+# Build and publish
+RUN dotnet build -c Release
+RUN dotnet publish src/TradingSystem.Console/TradingSystem.Console.csproj -c Release -o /app/publish
 
-# Run tests
-RUN dotnet test -c Release --no-build
+# Install EF Core tools and apply migrations
+RUN dotnet tool install --global dotnet-ef
+ENV PATH="${PATH}:/root/.dotnet/tools"
 
-# Publish the application
-RUN dotnet publish src/TradingSystem.Console/TradingSystem.Console.csproj -c Release -o /app/publish --no-build
-
-# Create the runtime image
+# Stage 2: Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the published application
@@ -49,5 +54,9 @@ VOLUME ["/app/data", "/app/logs", "/app/config"]
 HEALTHCHECK --interval=30s --timeout=3s \
     CMD curl -f http://localhost/health || exit 1
 
+# Wait for database and run migrations
+COPY scripts/wait-for-it.sh /app/wait-for-it.sh
+RUN chmod +x /app/wait-for-it.sh
+
 # Set the entry point
-ENTRYPOINT ["dotnet", "TradingSystem.Console.dll"]
+ENTRYPOINT ["/app/wait-for-it.sh", "postgres:5432", "--", "dotnet", "TradingSystem.Console.dll"]

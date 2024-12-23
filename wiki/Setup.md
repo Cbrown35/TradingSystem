@@ -7,10 +7,11 @@ This guide walks through the process of setting up the Trading System for develo
 - .NET 6.0 SDK or later
 - Docker and Docker Compose
 - Git
-- PostgreSQL (for development)
+- jq (for Unix/Linux systems)
+- PowerShell (for Windows systems)
 - Visual Studio 2022 or VS Code with C# extensions
 
-## Development Setup
+## Initial Setup
 
 1. **Clone the Repository**
    ```bash
@@ -18,72 +19,81 @@ This guide walks through the process of setting up the Trading System for develo
    cd tradingsystem
    ```
 
-2. **Database Setup**
+2. **Configure Secrets**
    ```bash
-   # Initialize development database
-   cd scripts
-   ./init-dev-db.sql
-   ```
-
-3. **Configuration**
-   - Copy `appsettings.json.example` to `appsettings.json`
-   - Update PostgreSQL connection strings
-   - Configure exchange API credentials
-
-4. **Build the Solution**
-   ```bash
-   dotnet restore
-   dotnet build
-   ```
-
-5. **Run Tests**
-   ```bash
-   dotnet test
-   ```
-
-## Docker Deployment
-
-1. **Build Docker Images**
-   ```bash
-   docker-compose build
-   ```
-
-2. **Start Services**
-   ```bash
-   # Development
-   docker-compose up -d
+   # Copy the secrets template
+   cp config/secrets.template.json config/secrets.json
    
-   # Production
-   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+   # Edit secrets.json with your secure values
+   # IMPORTANT: Never commit secrets.json to the repository
    ```
 
-3. **Verify Deployment**
-   - Access monitoring: http://localhost:3000 (Grafana)
-   - Check health endpoints: http://localhost:8080/health
+3. **Load Secrets**
+   Unix/Linux:
+   ```bash
+   chmod +x scripts/load-secrets.sh
+   source scripts/load-secrets.sh
+   ```
+   
+   Windows PowerShell:
+   ```powershell
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+   . .\scripts\load-secrets.ps1
+   ```
 
-## Monitoring Setup
+4. **Start Services**
+   ```bash
+   docker-compose up -d
+   ```
 
-1. **Grafana**
-   - Default credentials in `grafana/grafana.ini`
-   - Pre-configured dashboards in `grafana/provisioning/dashboards`
-   - Data sources in `grafana/provisioning/datasources`
+## Database Setup
 
-2. **Prometheus**
-   - Configuration in `prometheus/prometheus.yml`
-   - Alert rules in `prometheus/alerts`
-   - Recording rules in `prometheus/rules`
+TimescaleDB will be automatically initialized with:
+- Optimized time-series tables
+- Automatic data compression (after 7 days)
+- 1-year retention policy
+- Proper indexes for performance
 
-## Exchange Configuration
+## Service Access
 
-1. **TradingView Setup**
-   - Configure API credentials in settings
-   - Set up webhook endpoints
-   - Configure rate limits
+After starting the services, you can access:
 
-2. **Tradovate Setup**
-   - Set up API access
-   - Configure account credentials
-   - Set trading permissions
+1. **TimescaleDB**
+   - Host: localhost:5432
+   - Database: from secrets.json
+   - Username: from secrets.json
+   - Password: from secrets.json
+
+2. **Redis**
+   - Host: localhost:6379
+   - Password: from secrets.json
+
+3. **pgAdmin**
+   - URL: http://localhost:5050
+   - Email: from secrets.json
+   - Password: from secrets.json
+
+## Security Notes
+
+1. **Secrets Management**
+   - Never commit secrets.json to the repository
+   - Keep your secrets.json secure
+   - Regularly rotate passwords in production
+   - Use different passwords for development and production
+
+2. **Environment Variables**
+   The load-secrets scripts will set up:
+   - Database connection strings
+   - Redis configuration
+   - API keys and JWT secrets
+   - Service credentials
+
+3. **Production Deployment**
+   For production:
+   - Use a secure secrets management service
+   - Enable SSL/TLS for all services
+   - Use strong, unique passwords
+   - Implement proper network security
 
 ## Development Tools
 
@@ -95,35 +105,23 @@ Recommended VS Code extensions:
 
 ## Troubleshooting
 
-Common issues and solutions:
+1. **Secrets Issues**
+   - Verify secrets.json exists
+   - Check environment variables are set
+   - Ensure correct file permissions
+   - Validate JSON format
 
-1. **Database Connection**
-   - Verify PostgreSQL connection strings
-   - Check PostgreSQL service status
-   - Confirm database user permissions
-   - Verify database exists and is accessible
+2. **Database Connection**
+   - Verify TimescaleDB is running
+   - Check connection strings
+   - Confirm port availability
+   - Review database logs
 
-2. **Docker Issues**
-   - Clear Docker cache
-   - Check Docker logs
-   - Verify port availability
-
-3. **Build Errors**
-   - Clear NuGet cache
-   - Restore packages
-   - Check SDK version
-
-## Environment Variables
-
-Key environment variables:
-
-```bash
-ASPNETCORE_ENVIRONMENT=Development
-POSTGRES_CONNECTION=
-EXCHANGE_API_KEY=
-EXCHANGE_API_SECRET=
-MONITORING_ENABLED=true
-```
+3. **Docker Issues**
+   - Check container logs
+   - Verify port conflicts
+   - Ensure sufficient resources
+   - Review Docker daemon logs
 
 ## Next Steps
 
@@ -131,3 +129,25 @@ MONITORING_ENABLED=true
 2. Explore available [Components](Components)
 3. Set up your development environment
 4. Run the sample strategies
+
+## Maintenance
+
+1. **Backup Secrets**
+   - Keep secure copies of secrets.json
+   - Document all credentials
+   - Implement backup procedures
+
+2. **Update Passwords**
+   ```bash
+   # 1. Update secrets.json
+   # 2. Reload secrets
+   source scripts/load-secrets.sh  # Unix/Linux
+   . .\scripts\load-secrets.ps1    # Windows
+   # 3. Restart services
+   docker-compose down
+   docker-compose up -d
+   ```
+
+3. **Monitor Logs**
+   ```bash
+   docker-compose logs -f

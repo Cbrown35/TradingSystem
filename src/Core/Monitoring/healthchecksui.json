@@ -5,7 +5,7 @@
     "MaximumHistoryEntriesPerEndpoint": 50,
     "ApiMaxActiveRequests": 3,
     "DisableMigrations": false,
-    "UseRelativePaths": true,
+    "UseRelativePaths": false,
     "WebhookEndpoints": [
       {
         "Name": "Slack",
@@ -36,37 +36,37 @@
     "Endpoints": [
       {
         "Name": "Trading System",
-        "Uri": "/health",
+        "Uri": "http://tradingsystem/health",
         "Weight": 1,
         "Tags": ["trading", "core"]
       },
       {
         "Name": "Market Data",
-        "Uri": "http://localhost:5001/health",
+        "Uri": "http://tradingsystem/health/market-data",
         "Weight": 2,
         "Tags": ["market_data"]
       },
       {
         "Name": "Strategy Execution",
-        "Uri": "http://localhost:5002/health",
+        "Uri": "http://tradingsystem/health/strategy",
         "Weight": 2,
         "Tags": ["trading", "strategy"]
       },
       {
         "Name": "Risk Management",
-        "Uri": "http://localhost:5003/health",
+        "Uri": "http://tradingsystem/health/risk",
         "Weight": 3,
         "Tags": ["risk"]
       },
       {
         "Name": "Database",
-        "Uri": "http://localhost:9187/health",
+        "Uri": "http://tradingsystem/health/database",
         "Weight": 2,
         "Tags": ["infrastructure"]
       },
       {
         "Name": "Redis Cache",
-        "Uri": "http://localhost:9121/health",
+        "Uri": "http://tradingsystem/health/redis",
         "Weight": 1,
         "Tags": ["infrastructure", "cache"]
       }

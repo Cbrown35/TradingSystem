@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Net;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TradingSystem.Core.Configuration;
 
@@ -49,7 +51,7 @@ public class HealthCheckRateLimitMiddleware
             {
                 _logger.LogWarning("Rate limit exceeded for client {ClientId}", clientId);
                 context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
-                context.Response.Headers.Add("Retry-After", GetRetryAfterSeconds(bucket).ToString());
+                context.Response.Headers.Append("Retry-After", GetRetryAfterSeconds(bucket).ToString());
                 
                 await context.Response.WriteAsJsonAsync(new
                 {
