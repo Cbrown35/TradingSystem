@@ -12,10 +12,13 @@ services:
       - redis
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_Kestrel__Certificates__Default__Path=/https/aspnetapp.pfx
+      - ASPNETCORE_Kestrel__Certificates__Default__Password=crypticpassword
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config:/app/config:ro
+      - ${HOME}/.aspnet/https:/https/
     ports:
       - "5000:80"
     networks:

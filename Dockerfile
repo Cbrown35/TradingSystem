@@ -6,6 +6,7 @@ WORKDIR /source
 COPY *.sln .
 COPY global.json .
 COPY Directory.Build.props .
+COPY Directory.Packages.props .
 COPY NuGet.config .
 COPY src/Common/*.csproj src/Common/
 COPY src/Core/*.csproj src/Core/
@@ -14,15 +15,16 @@ COPY src/RealTrading/*.csproj src/RealTrading/
 COPY src/StrategySearch/*.csproj src/StrategySearch/
 COPY src/TradingSystem.Console/*.csproj src/TradingSystem.Console/
 
-# Restore packages
+# Clear NuGet package cache and restore packages
+RUN dotnet nuget locals all --clear
 RUN dotnet restore
 
 # Now copy the rest of the code
 COPY src/. src/
 
 # Build and publish
-RUN dotnet build -c Release --no-restore
-RUN dotnet publish src/TradingSystem.Console/TradingSystem.Console.csproj -c Release -o /app/publish --no-restore
+RUN dotnet build -c Release
+RUN dotnet publish src/TradingSystem.Console/TradingSystem.Console.csproj -c Release -o /app/publish
 
 # Install EF Core tools and apply migrations
 RUN dotnet tool install --global dotnet-ef
