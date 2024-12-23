@@ -109,9 +109,48 @@ dotnet ef database update
 ```
 
 4. Configure settings:
+
+a. Set up application settings:
 ```bash
-cp appsettings.Example.json appsettings.json
-# Edit appsettings.json with your configuration
+cp src/TradingSystem.Console/appsettings.json src/TradingSystem.Console/appsettings.Development.json
+```
+
+b. Set up secrets:
+```bash
+cp config/secrets.template.json config/secrets.json
+```
+
+c. Generate secure keys and passwords:
+```bash
+# On Unix/Linux/macOS
+./scripts/generate-secrets.sh
+
+# On Windows
+.\scripts\generate-secrets.ps1
+```
+
+The secrets configuration includes:
+- Database credentials
+  - User: PostgreSQL username
+  - Password: Generated secure password
+  - Name: Database name
+- Redis password for caching
+- PgAdmin credentials
+  - Email: Admin email
+  - Password: Generated secure password
+- Monitoring
+  - Grafana admin password
+- Security
+  - JWT secret for authentication
+  - API key for external integrations
+
+d. Load the secrets into your environment:
+```bash
+# On Unix/Linux/macOS
+source scripts/load-secrets.sh
+
+# On Windows
+.\scripts\load-secrets.ps1
 ```
 
 5. Build the solution:

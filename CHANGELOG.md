@@ -58,7 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - README documentation
+  - Detailed configuration setup instructions
+  - Secrets management guide
+  - Environment setup procedures
 - API documentation
+  - Swagger integration guide
+  - API testing instructions
 - Contributing guidelines
 - Code of conduct
 - License information
