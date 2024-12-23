@@ -4,21 +4,22 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- EF Core and PostgreSQL -->
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Analyzers" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.0" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.2" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Analyzers" Version="8.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.2" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.2" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.2" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.3" />
 
     <!-- Microsoft Extensions -->
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
@@ -40,16 +41,16 @@
     <PackageVersion Include="System.Reactive" Version="6.0.0" />
     
     <!-- Redis -->
-    <PackageVersion Include="StackExchange.Redis" Version="2.7.4" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.8.24" />
     
     <!-- Health Checks -->
     <PackageVersion Include="AspNetCore.HealthChecks.Redis" Version="8.0.0" />
-    <PackageVersion Include="AspNetCore.HealthChecks.UI" Version="7.0.0" />
-    <PackageVersion Include="AspNetCore.HealthChecks.UI.Client" Version="7.0.0" />
-    <PackageVersion Include="AspNetCore.HealthChecks.UI.Core" Version="7.0.0" />
-    <PackageVersion Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="7.0.0" />
-    <PackageVersion Include="AspNetCore.HealthChecks.System" Version="7.0.0" />
-    <PackageVersion Include="AspNetCore.HealthChecks.Network" Version="7.0.0" />
+    <PackageVersion Include="AspNetCore.HealthChecks.UI" Version="8.0.0" />
+    <PackageVersion Include="AspNetCore.HealthChecks.UI.Client" Version="8.0.0" />
+    <PackageVersion Include="AspNetCore.HealthChecks.UI.Core" Version="8.0.0" />
+    <PackageVersion Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="8.0.0" />
+    <PackageVersion Include="AspNetCore.HealthChecks.System" Version="8.0.0" />
+    <PackageVersion Include="AspNetCore.HealthChecks.Network" Version="8.0.0" />
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="8.0.0" />
 
     <!-- Logging and Documentation -->
@@ -59,9 +60,9 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.5.0" />
 
     <!-- Monitoring -->
-    <PackageVersion Include="prometheus-net" Version="8.0.1" />
-    <PackageVersion Include="prometheus-net.AspNetCore" Version="8.0.1" />
-    <PackageVersion Include="prometheus-net.AspNetCore.HealthChecks" Version="8.0.1" />
+    <PackageVersion Include="prometheus-net" Version="8.2.1" />
+    <PackageVersion Include="prometheus-net.AspNetCore" Version="8.2.1" />
+    <PackageVersion Include="prometheus-net.AspNetCore.HealthChecks" Version="8.2.1" />
 
     <!-- Other -->
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
