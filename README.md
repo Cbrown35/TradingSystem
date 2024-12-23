@@ -64,6 +64,12 @@ The system is organized into several key layers:
 - Risk control
 - Market data streaming
 
+### API Documentation
+- Swagger UI integration
+- Interactive API testing
+- Endpoint documentation
+- Request/response schema documentation
+
 ### Data Management
 - Historical data storage
 - Real-time data processing
@@ -120,6 +126,11 @@ Start the console application:
 cd src/TradingSystem.Console
 dotnet run
 ```
+
+Access the API documentation:
+- Navigate to `http://localhost/swagger` in your browser when running in Development environment
+- Interactive documentation of all API endpoints
+- Test API endpoints directly from the Swagger UI
 
 ## Development
 

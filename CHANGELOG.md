@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strategy search and optimization framework
 - Real-time trading capabilities
 - Risk management system
+- Swagger API documentation integration
+  - Interactive API testing interface
+  - Endpoint documentation
+  - Request/response schema documentation
 
 ### Infrastructure Layer
 - PostgreSQL database integration
