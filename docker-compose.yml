@@ -5,94 +5,67 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: docker.io/library/tradingsystem-tradingsystem
     container_name: tradingsystem
     restart: unless-stopped
+    networks:
+      - trading-network
     depends_on:
       - postgres
       - redis
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_Kestrel__Certificates__Default__Path=/https/aspnetapp.pfx
-      - ASPNETCORE_Kestrel__Certificates__Default__Password=crypticpassword
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./config:/app/config:ro
-      - ${HOME}/.aspnet/https:/https/
-    ports:
-      - "5000:80"
-    networks:
-      - trading-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
+      - timescaledb
 
   postgres:
+    image: postgres:14.5-alpine
+    container_name: trading-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - trading-network
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: trading-redis
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  timescaledb:
     image: timescale/timescaledb:latest-pg14
     container_name: trading-timescaledb
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=${DB_NAME:-tradingsystem}
-      - POSTGRES_USER=${DB_USER:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      # TimescaleDB specific settings
-      - TIMESCALEDB_TUNE=true
-      - TIMESCALEDB_TUNE_MAX_CONNS=100
-      - TIMESCALEDB_TUNE_MEMORY=1GB
-      - TIMESCALEDB_TUNE_CPU=2
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./scripts/init-timescaledb.sql:/docker-entrypoint-initdb.d/init-timescaledb.sql:ro
-    ports:
-      - "5432:5432"
+      - POSTGRES_PASSWORD=postgres
     networks:
       - trading-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:alpine
-    container_name: trading-redis
-    restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis-data:/data
-    ports:
-      - "6379:6379"
-    networks:
-      - trading-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   pgadmin:
     image: dpage/pgadmin4
     container_name: trading-pgadmin
     restart: unless-stopped
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL}
-      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
-    volumes:
-      - pgadmin-data:/var/lib/pgadmin
-    ports:
-      - "5050:80"
     networks:
       - trading-network
-    depends_on:
-      - postgres
 
-volumes:
-  postgres-data:
-  redis-data:
-  pgadmin-data:
+  mailhog:
+    image: mailhog/mailhog
+    container_name: trading-mailhog
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: trading-redis-commander
+    restart: unless-stopped
+    networks:
+      - trading-network
 
 networks:
   trading-network:
+    name: trading-network
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1

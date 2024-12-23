@@ -49,6 +49,12 @@ public static class HealthCheckStartup
             setup.MaximumHistoryEntriesPerEndpoint(50);
             setup.SetApiMaxActiveRequests(3);
             setup.DisableDatabaseMigrations();
+            setup.AddHealthCheckEndpoint("Trading System", "http://tradingsystem/health");
+            setup.AddHealthCheckEndpoint("Market Data", "http://tradingsystem/health/market-data");
+            setup.AddHealthCheckEndpoint("Strategy Execution", "http://tradingsystem/health/strategy");
+            setup.AddHealthCheckEndpoint("Risk Management", "http://tradingsystem/health/risk");
+            setup.AddHealthCheckEndpoint("Database", "http://postgres/health");
+            setup.AddHealthCheckEndpoint("Redis Cache", "http://redis/health");
         })
         .AddInMemoryStorage();
 
@@ -111,28 +117,50 @@ public static class HealthCheckStartup
         var endpointRouteBuilder = app as IEndpointRouteBuilder;
         if (endpointRouteBuilder != null)
         {
+            // Map main health check endpoint
             endpointRouteBuilder.MapHealthChecks("/health", new HealthCheckOptions
             {
                 Predicate = _ => true,
                 AllowCachingResponses = false
             });
 
-            endpointRouteBuilder.MapHealthChecks("/health/ready", new HealthCheckOptions
+            // Map component-specific health check endpoints
+            endpointRouteBuilder.MapHealthChecks("/health/market-data", new HealthCheckOptions
             {
-                Predicate = check => check.Tags.Contains("ready"),
+                Predicate = check => check.Name == "market-data",
                 AllowCachingResponses = false
             });
 
-            endpointRouteBuilder.MapHealthChecks("/health/live", new HealthCheckOptions
+            endpointRouteBuilder.MapHealthChecks("/health/strategy", new HealthCheckOptions
             {
-                Predicate = check => !check.Tags.Contains("ready"),
+                Predicate = check => check.Name == "strategy-execution",
                 AllowCachingResponses = false
             });
 
+            endpointRouteBuilder.MapHealthChecks("/health/risk", new HealthCheckOptions
+            {
+                Predicate = check => check.Name == "risk-management",
+                AllowCachingResponses = false
+            });
+
+            endpointRouteBuilder.MapHealthChecks("/health/database", new HealthCheckOptions
+            {
+                Predicate = check => check.Tags.Contains("database"),
+                AllowCachingResponses = false
+            });
+
+            endpointRouteBuilder.MapHealthChecks("/health/redis", new HealthCheckOptions
+            {
+                Predicate = check => check.Tags.Contains("redis"),
+                AllowCachingResponses = false
+            });
+
+            // Map health check UI
             endpointRouteBuilder.MapHealthChecksUI(options =>
             {
-                options.UIPath = "/health-ui";
-                options.ApiPath = "/health-api";
+                options.UIPath = "/healthchecks-ui";
+                options.ApiPath = "/healthchecks-api";
+                options.AddCustomStylesheet("wwwroot/css/healthchecks.css");
             });
         }
 
