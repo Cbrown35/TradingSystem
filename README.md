@@ -70,6 +70,79 @@ The system is organized into several key layers:
 - Endpoint documentation
 - Request/response schema documentation
 
+### Trading API Endpoints
+
+The system exposes the following REST API endpoints for trading:
+
+#### Place Order
+```http
+POST /api/Trading/place-order
+Content-Type: application/json
+
+{
+    "symbol": "BTCUSD",
+    "quantity": 0.1,
+    "price": 50000,
+    "isLong": true,
+    "orderType": 0
+}
+```
+
+#### Get Open Orders
+```http
+GET /api/Trading/open-orders
+```
+
+#### Close Order
+```http
+POST /api/Trading/close-order/{orderId}
+```
+
+#### Get Market Data
+```http
+GET /api/Trading/market-data/{symbol}
+```
+
+#### Get Account Balance
+```http
+GET /api/Trading/balance?asset=USDT
+```
+
+### Testing Trading Functionality
+
+1. Start the system:
+```bash
+dotnet run --project src/TradingSystem.Console/TradingSystem.Console.csproj
+```
+
+2. Place a test order:
+```bash
+curl -X POST http://localhost:3000/api/Trading/place-order \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"BTCUSD","quantity":0.1,"price":50000,"isLong":true,"orderType":0}'
+```
+
+3. View open orders:
+```bash
+curl http://localhost:3000/api/Trading/open-orders
+```
+
+4. Close an order (replace {orderId} with actual ID):
+```bash
+curl -X POST http://localhost:3000/api/Trading/close-order/{orderId}
+```
+
+5. Check market data:
+```bash
+curl http://localhost:3000/api/Trading/market-data/BTCUSD
+```
+
+The system includes a simulated exchange adapter for testing that:
+- Maintains simulated prices for BTCUSD, ETHUSD, and XRPUSD
+- Generates realistic order books and market data
+- Simulates trade execution with PnL calculation
+- Provides a test balance of 10,000 USDT
+
 ### Data Management
 - Historical data storage
 - Real-time data processing

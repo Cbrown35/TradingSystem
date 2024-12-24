@@ -17,10 +17,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strategy search and optimization framework
 - Real-time trading capabilities
 - Risk management system
+- Trading API endpoints
+  - Place order endpoint
+  - Get open orders endpoint
+  - Close order endpoint
+  - Get market data endpoint
+  - Get balance endpoint
+- Simulated exchange adapter for testing
+  - Realistic market data simulation
+  - Order execution simulation
+  - PnL calculation
+  - Test balance management
 - Swagger API documentation integration
   - Interactive API testing interface
   - Endpoint documentation
   - Request/response schema documentation
+- Trading functionality testing guide
+  - API endpoint examples
+  - Curl command examples
+  - Testing workflow documentation
 
 ### Infrastructure Layer
 - PostgreSQL database integration
