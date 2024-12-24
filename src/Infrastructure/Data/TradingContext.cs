@@ -28,11 +28,11 @@ public class TradingContext : DbContext
             entity.Property(e => e.Expression).HasMaxLength(1000);
             
             entity.Property(e => e.ParametersJson)
-                .HasColumnType("jsonb")
+                .HasColumnType("nvarchar(max)")
                 .HasDefaultValue("{}");
             
             entity.Property(e => e.MetricsJson)
-                .HasColumnType("jsonb")
+                .HasColumnType("nvarchar(max)")
                 .HasDefaultValue("{}");
 
             entity.HasMany(e => e.Conditions)
@@ -51,7 +51,7 @@ public class TradingContext : DbContext
             entity.Property(e => e.SignalId).IsRequired();
             
             entity.Property(e => e.ParametersJson)
-                .HasColumnType("jsonb")
+                .HasColumnType("nvarchar(max)")
                 .HasDefaultValue("{}");
 
             entity.Ignore(e => e.Parameters);
@@ -64,19 +64,19 @@ public class TradingContext : DbContext
             entity.Property(e => e.Description).HasMaxLength(500);
             
             entity.Property(e => e.ParametersJson)
-                .HasColumnType("jsonb")
+                .HasColumnType("nvarchar(max)")
                 .HasDefaultValue("{}");
             
             entity.Property(e => e.ValuesJson)
-                .HasColumnType("jsonb")
+                .HasColumnType("nvarchar(max)")
                 .HasDefaultValue("{}");
             
             entity.Property(e => e.SettingsJson)
-                .HasColumnType("jsonb")
+                .HasColumnType("nvarchar(max)")
                 .HasDefaultValue("{}");
             
             entity.Property(e => e.DependenciesJson)
-                .HasColumnType("jsonb")
+                .HasColumnType("nvarchar(max)")
                 .HasDefaultValue("[]");
 
             entity.Ignore(e => e.Parameters);
@@ -109,10 +109,29 @@ public class TradingContext : DbContext
             entity.Property(e => e.MarketCondition).HasMaxLength(50);
             entity.Property(e => e.SetupType).HasMaxLength(50);
 
-            entity.Property(e => e.Indicators).HasColumnType("jsonb");
-            entity.Property(e => e.Tags).HasColumnType("jsonb");
-            entity.Property(e => e.Signals).HasColumnType("jsonb");
-            entity.Property(e => e.RiskMetrics).HasColumnType("jsonb");
+            entity.Property(e => e.Indicators)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<Dictionary<string, decimal>>(v, (JsonSerializerOptions)null) ?? new Dictionary<string, decimal>())
+                .HasColumnType("nvarchar(max)");
+            
+            entity.Property(e => e.Tags)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null) ?? new List<string>())
+                .HasColumnType("nvarchar(max)");
+            
+            entity.Property(e => e.Signals)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<List<Signal>>(v, (JsonSerializerOptions)null) ?? new List<Signal>())
+                .HasColumnType("nvarchar(max)");
+            
+            entity.Property(e => e.RiskMetrics)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<Dictionary<string, decimal>>(v, (JsonSerializerOptions)null) ?? new Dictionary<string, decimal>())
+                .HasColumnType("nvarchar(max)");
 
             entity.HasOne<Trade>()
                 .WithMany()
@@ -158,10 +177,29 @@ public class TradingContext : DbContext
             entity.Property(e => e.SpreadPercentage).HasPrecision(18, 8);
             entity.Property(e => e.LiquidityScore).HasPrecision(18, 8);
 
-            entity.Property(e => e.Indicators).HasColumnType("jsonb");
-            entity.Property(e => e.CustomMetrics).HasColumnType("jsonb");
-            entity.Property(e => e.OrderBook).HasColumnType("jsonb");
-            entity.Property(e => e.RecentTrades).HasColumnType("jsonb");
+            entity.Property(e => e.Indicators)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<Dictionary<string, decimal>>(v, (JsonSerializerOptions)null) ?? new Dictionary<string, decimal>())
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(e => e.CustomMetrics)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<Dictionary<string, decimal>>(v, (JsonSerializerOptions)null) ?? new Dictionary<string, decimal>())
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(e => e.OrderBook)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<List<OrderBookLevel>>(v, (JsonSerializerOptions)null) ?? new List<OrderBookLevel>())
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(e => e.RecentTrades)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<List<Trade>>(v, (JsonSerializerOptions)null) ?? new List<Trade>())
+                .HasColumnType("nvarchar(max)");
 
             // TimescaleDB time-series indexes
             entity.HasIndex(e => e.Timestamp)
@@ -195,7 +233,11 @@ public class TradingContext : DbContext
             entity.Property(e => e.Commission).HasPrecision(18, 8);
             entity.Property(e => e.Slippage).HasPrecision(18, 8);
 
-            entity.Property(e => e.Tags).HasColumnType("jsonb");
+            entity.Property(e => e.Tags)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<Dictionary<string, string>>(v, (JsonSerializerOptions)null) ?? new Dictionary<string, string>())
+                .HasColumnType("nvarchar(max)");
 
             // TimescaleDB time-series indexes
             entity.HasIndex(e => e.CreateTime)
@@ -215,8 +257,17 @@ public class TradingContext : DbContext
             entity.HasKey(e => e.Name);
             entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
             
-            entity.Property(e => e.Symbols).HasColumnType("jsonb");
-            entity.Property(e => e.Parameters).HasColumnType("jsonb");
+            entity.Property(e => e.Symbols)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null) ?? new List<string>())
+                .HasColumnType("nvarchar(max)");
+            
+            entity.Property(e => e.Parameters)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                    v => JsonSerializer.Deserialize<Dictionary<string, decimal>>(v, (JsonSerializerOptions)null) ?? new Dictionary<string, decimal>())
+                .HasColumnType("nvarchar(max)");
         });
 
         base.OnModelCreating(modelBuilder);
@@ -224,17 +275,11 @@ public class TradingContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
+        // No additional configuration needed for in-memory database
         base.OnConfiguring(optionsBuilder);
-
-        // Enable TimescaleDB extension if not already enabled
-        optionsBuilder.UseNpgsql(options => 
-        {
-            options.EnableRetryOnFailure();
-            options.CommandTimeout(60);
-        });
     }
 
-    public async Task CreateHypertablesAsync()
+    public virtual async Task CreateHypertablesAsync()
     {
         // Create hypertables for time-series data
         await Database.ExecuteSqlRawAsync(@"
