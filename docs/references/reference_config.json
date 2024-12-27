@@ -1,0 +1,306 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "last_updated": "2024-01-22",
+    "changelog": [
+      {
+        "version": "1.0.0",
+        "date": "2024-01-22",
+        "changes": [
+          "Initial documentation structure",
+          "Added core principles",
+          "Added book references",
+          "Added implementation notes"
+        ]
+      }
+    ]
+  },
+  "trading_system": {
+    "core_principles": [
+      {
+        "category": "Risk Management",
+        "principles": [
+          "Position sizing must be based on account risk tolerance",
+          "Stop losses should be placed at technically significant levels",
+          "Maximum portfolio drawdown should not exceed predefined limits",
+          "Risk-reward ratio should be at least 1:2 for all trades",
+          "Portfolio diversification across uncorrelated strategies"
+        ]
+      },
+      {
+        "category": "System Design",
+        "principles": [
+          "All strategies must be thoroughly backtested",
+          "System should handle errors gracefully without manual intervention",
+          "Data integrity checks must be implemented at all stages",
+          "Performance optimization should not compromise reliability",
+          "Real-time monitoring of all system components"
+        ]
+      },
+      {
+        "category": "Strategy Development",
+        "principles": [
+          "Strategies must have clear statistical edge",
+          "Avoid overfitting through out-of-sample testing",
+          "Parameters should be robust across market conditions",
+          "Regular strategy performance review and adaptation",
+          "Clear entry and exit rules with no discretion"
+        ]
+      }
+    ],
+    "book_references": {
+      "inside_black_box": {
+        "title": "Inside the Black Box",
+        "author": "Rishi K. Narang",
+        "key_concepts": [
+          "Alpha model development",
+          "Risk management frameworks",
+          "Transaction cost analysis",
+          "System infrastructure"
+        ],
+        "important_pages": {
+          "alpha_models": "45-67",
+          "risk_models": "89-112",
+          "transaction_costs": "156-178",
+          "system_architecture": "201-234"
+        }
+      },
+      "algorithmic_trading": {
+        "title": "Algorithmic Trading",
+        "author": "Ernest P. Chan",
+        "key_concepts": [
+          "Mean reversion strategies",
+          "Statistical arbitrage",
+          "Time series analysis",
+          "Pairs trading"
+        ],
+        "important_pages": {
+          "statistical_arbitrage": "32-58",
+          "mean_reversion": "78-102",
+          "backtesting": "145-167",
+          "risk_management": "189-212"
+        }
+      },
+      "trading_and_exchanges": {
+        "title": "Trading and Exchanges",
+        "author": "Larry Harris",
+        "key_concepts": [
+          "Market microstructure",
+          "Order types and execution",
+          "Trading costs",
+          "Market making"
+        ],
+        "important_pages": {
+          "order_types": "89-124",
+          "market_making": "156-189",
+          "trading_strategies": "234-267",
+          "risk_management": "312-345"
+        }
+      },
+      "evidence_based_ta": {
+        "title": "Evidence-Based Technical Analysis",
+        "author": "David Aronson",
+        "key_concepts": [
+          "Scientific testing methods",
+          "Statistical validation",
+          "Data mining bias",
+          "Hypothesis testing"
+        ],
+        "important_pages": {
+          "scientific_method": "67-98",
+          "statistical_testing": "134-167",
+          "data_mining": "245-278",
+          "hypothesis_testing": "312-345"
+        }
+      }
+    },
+    "implementation_notes": {
+      "backtesting": {
+        "requirements": [
+          "Clean historical data",
+          "Transaction cost modeling",
+          "Realistic execution simulation",
+          "Performance metrics calculation"
+        ],
+        "validation_methods": [
+          "Walk-forward analysis",
+          "Monte Carlo simulation",
+          "Out-of-sample testing",
+          "Parameter sensitivity analysis"
+        ]
+      },
+      "risk_management": {
+        "position_sizing": [
+          "Account size based",
+          "Volatility adjusted",
+          "Risk parity approach",
+          "Maximum drawdown constraints"
+        ],
+        "monitoring": [
+          "Real-time position tracking",
+          "Risk exposure alerts",
+          "Performance metrics",
+          "Correlation analysis"
+        ]
+      }
+    },
+    "market_specific": {
+      "indices": {
+        "considerations": [
+          "Index-specific trading hours",
+          "Component weighting changes",
+          "Rebalancing periods",
+          "Dividend adjustments",
+          "Index methodology updates"
+        ],
+        "parameters": {
+          "major_indices": {
+            "NASDAQ": {
+              "trading_hours": "9:30-16:00 EST",
+              "min_tick_size": 0.01,
+              "rebalancing": "quarterly",
+              "volatility_adjustment": 1.2
+            },
+            "SP500": {
+              "trading_hours": "9:30-16:00 EST",
+              "min_tick_size": 0.01,
+              "rebalancing": "quarterly",
+              "volatility_adjustment": 1.1
+            },
+            "DOW": {
+              "trading_hours": "9:30-16:00 EST",
+              "min_tick_size": 0.01,
+              "rebalancing": "as needed",
+              "volatility_adjustment": 1.1
+            }
+          },
+          "global_indices": {
+            "FTSE": {
+              "trading_hours": "8:00-16:30 GMT",
+              "min_tick_size": 0.5,
+              "rebalancing": "quarterly",
+              "volatility_adjustment": 1.2
+            },
+            "DAX": {
+              "trading_hours": "9:00-17:30 CET",
+              "min_tick_size": 0.01,
+              "rebalancing": "quarterly",
+              "volatility_adjustment": 1.3
+            },
+            "NIKKEI": {
+              "trading_hours": "9:00-15:15 JST",
+              "min_tick_size": 1,
+              "rebalancing": "annually",
+              "volatility_adjustment": 1.4
+            }
+          }
+        }
+      },
+      "futures": {
+        "considerations": [
+          "Contract expiration handling",
+          "Rolling positions to next contract",
+          "Margin requirements and funding",
+          "Contango and backwardation",
+          "Settlement procedures"
+        ],
+        "parameters": {
+          "volatility_adjustment": 1.3,
+          "position_size_limit": 0.08,
+          "min_order_size": {
+            "index_futures": 1,
+            "commodity_futures": 1,
+            "crypto_futures": 0.001
+          },
+          "margin_requirements": {
+            "initial_margin": 0.1,
+            "maintenance_margin": 0.075
+          }
+        }
+      },
+      "crypto": {
+        "considerations": [
+          "24/7 trading environment",
+          "High volatility handling",
+          "Exchange-specific rate limits",
+          "Blockchain network delays"
+        ],
+        "parameters": {
+          "volatility_adjustment": 1.5,
+          "position_size_limit": 0.1,
+          "min_order_size": {
+            "BTC": 0.001,
+            "ETH": 0.01
+          }
+        }
+      },
+      "forex": {
+        "considerations": [
+          "Session-based trading",
+          "Economic calendar impact",
+          "Broker-specific requirements",
+          "Rollover costs"
+        ],
+        "parameters": {
+          "volatility_adjustment": 1.0,
+          "position_size_limit": 0.05,
+          "min_order_size": {
+            "major_pairs": 0.1,
+            "minor_pairs": 0.05
+          }
+        }
+      },
+      "equities": {
+        "considerations": [
+          "Market hours constraints",
+          "Pre/post market handling",
+          "Corporate actions",
+          "Short selling rules"
+        ],
+        "parameters": {
+          "volatility_adjustment": 1.2,
+          "position_size_limit": 0.02,
+          "min_order_size": 1
+        }
+      }
+    },
+    "configuration_templates": {
+      "development": {
+        "risk_limits": {
+          "max_position_size": 100,
+          "max_drawdown": 0.02,
+          "daily_loss_limit": 0.01
+        },
+        "execution": {
+          "simulation_mode": true,
+          "paper_trading": true,
+          "logging_level": "DEBUG"
+        }
+      },
+      "production": {
+        "risk_limits": {
+          "max_position_size": 10000,
+          "max_drawdown": 0.1,
+          "daily_loss_limit": 0.05
+        },
+        "execution": {
+          "simulation_mode": false,
+          "paper_trading": false,
+          "logging_level": "INFO"
+        }
+      },
+      "backtesting": {
+        "risk_limits": {
+          "max_position_size": null,
+          "max_drawdown": null,
+          "daily_loss_limit": null
+        },
+        "execution": {
+          "simulation_mode": true,
+          "paper_trading": false,
+          "logging_level": "DEBUG"
+        }
+      }
+    }
+  }
+}

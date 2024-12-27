@@ -239,3 +239,11 @@ _pkginfo.txt
 *.cachefile
 *.VC.VC.opendb
 sdk-*-installer
+
+# Ignore book references to avoid copyright issues
+docs/references/books/*
+
+# Keep tracking other documentation
+!docs/references
+!docs/references/*
+!docs/references/.gitkeep
