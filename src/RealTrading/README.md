@@ -105,11 +105,16 @@ Supported order types:
 
 ### Risk Management
 
-Automatic risk controls:
-- Stop loss: 2% from entry
-- Take profit: 4% from entry
-- Position sizing based on balance
-- Maximum drawdown limits
+Risk controls are configured according to the reference configuration (`docs/references/reference_config.json`):
+- Market-specific volatility adjustments
+  * Crypto: 1.5x standard
+  * Futures: 1.3x standard
+  * Equities: 1.2x standard
+- Position sizing based on market parameters
+- Dynamic stop loss and take profit levels
+- Maximum drawdown limits per market type
+
+See `docs/risk/parameters.md` for detailed risk management documentation.
 
 ### Trading Pairs
 
@@ -164,18 +169,33 @@ dotnet test --filter TestCategory=TradingApi
 
 ## Configuration
 
-Key settings in `appsettings.json`:
+The system uses a multi-layered configuration approach:
+
+### Core Configuration
+- `appsettings.json`: Basic application settings
+- `docs/references/reference_config.json`: Trading parameters and market configurations
+- `docs/setup/configuration.md`: Detailed configuration guide
+
+### Market-Specific Settings
+Configuration is tailored by market type (see `docs/references/reference_config.json`):
 ```json
 {
-  "Trading": {
-    "DefaultAsset": "USDT",
-    "MaxPositionSize": 0.1,
-    "MaxDrawdown": 0.1,
-    "StopLossPercent": 0.02,
-    "TakeProfitPercent": 0.04
+  "crypto": {
+    "volatility_adjustment": 1.5,
+    "position_size_limit": 0.1,
+    "min_order_size": {
+      "BTC": 0.001,
+      "ETH": 0.01
+    }
   }
 }
 ```
+
+### Documentation
+For detailed configuration information, see:
+- `docs/setup/configuration.md`: Setup and configuration guide
+- `docs/risk/parameters.md`: Risk management parameters
+- `docs/references/trading_principles.md`: Core trading principles
 
 ## Monitoring
 

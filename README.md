@@ -2,9 +2,43 @@
 
 A comprehensive algorithmic trading system built with .NET 8, designed for developing, testing, and executing trading strategies across multiple markets.
 
+## Documentation
+
+The system includes comprehensive documentation in the `docs/` directory:
+
+### Reference Documentation (`docs/references/`)
+- Trading principles and core concepts
+- Market-specific parameters and configurations
+- Book references and study materials
+- Implementation guidelines
+
+### API Documentation (`docs/api/`)
+- Detailed endpoint specifications
+- Request/response schemas
+- Authentication requirements
+- Rate limits
+
+### Setup Guides (`docs/setup/`)
+- Installation instructions
+- Configuration guidelines
+- Environment setup
+- Deployment procedures
+
+### Design Documentation (`docs/design/`)
+- System architecture
+- Component interactions
+- Data flow diagrams
+- Design decisions
+
+### Trading Documentation
+- Backtesting methodology (`docs/backtesting/`)
+- Risk management parameters (`docs/risk/`)
+- Trading principles (`docs/principles/`)
+- Example configurations (`docs/examples/`)
+
 ## Architecture
 
-The system is organized into several key layers:
+The system is organized into several key layers, following the principles defined in our reference documentation:
 
 ### Common Layer (`src/Common/`)
 - Core domain models and interfaces
@@ -150,10 +184,11 @@ The system includes a simulated exchange adapter for testing that:
 - Data normalization
 
 ### Risk Management
-- Position sizing
-- Stop loss management
-- Portfolio allocation
-- Exposure monitoring
+- Position sizing (following reference configuration parameters)
+- Stop loss management with market-specific adjustments
+- Portfolio allocation based on risk metrics
+- Exposure monitoring with configurable limits
+- Market-specific volatility adjustments
 
 ## Getting Started
 
